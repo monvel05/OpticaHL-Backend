@@ -10,3 +10,5 @@ router.put('/stock/:id_articulo/:id_sucursal', inventarioController.actualizarSt
 
 // Transferir stock entre sucursales
 router.post('/traslado', inventarioController.trasladarStock);
+
+module.exports = router;
