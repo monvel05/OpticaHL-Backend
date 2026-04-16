@@ -51,3 +51,5 @@ exports.desactivarProveedor = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error interno del servidor' });
     }
 };
+
+module.exports = { obtenerProveedores, crearProveedor, desactivarProveedor };

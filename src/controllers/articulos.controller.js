@@ -186,3 +186,5 @@ exports.desactivarArticulo = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error interno al desactivar el artículo.' });
     }
 };
+
+module.exports = { crearArticulo, obtenerArticulos, actualizarArticulo, desactivarArticulo };

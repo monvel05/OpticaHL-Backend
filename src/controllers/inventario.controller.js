@@ -175,3 +175,40 @@ exports.activarArticuloSucursal = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error interno del servidor.' });
     }
 };
+
+// ==========================================
+// CONSULTA DE ARMAZONES 
+// ==========================================
+exports.consultaArmazones = async (req, res) => {
+    const { id_sucursal } = req.query;
+
+    if (!id_sucursal) {
+        return res.status(400).json({ 
+            success: false, 
+            message: "Falta especificar la sucursal (id_sucursal)." 
+        });
+    }
+
+    try {
+        // Trae: Código, nombre, color, marca y stock real
+        // Filtramos por categoria = 'Armazon'
+        const query = `
+            SELECT a.codigo, a.nombre, a.color, a.marca, inv.stock_actual
+            FROM articulos a
+            JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo
+            WHERE a.categoria = 'Armazon' 
+              AND inv.id_sucursal = ? 
+              AND inv.stock_actual > 0
+            LIMIT 50
+        `; 
+
+        const [armazones] = await pool.query(query, [id_sucursal]);
+        
+        res.status(200).json({ success: true, data: armazones });
+    } catch (error) {
+        console.error('Error al consultar inventario rápido:', error);
+        res.status(500).json({ success: false, message: 'Error interno del servidor.' });
+    }
+};
+
+module.exports = { obtenerAlertasStock, actualizarStock, trasladarStock, activarArticuloSucursal, consultaArmazones };
