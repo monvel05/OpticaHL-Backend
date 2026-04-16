@@ -2,18 +2,35 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+// IMPORTACIÓN DE RUTAS 
+const authRoutes = require('./routes/auth.routes');
+const proveedoresRoutes = require('./routes/proveedores.routes');
+const articulosRoutes = require('./routes/articulos.routes');
+const inventarioRoutes = require('./routes/inventario.routes');
+const clienteRoutes = require('./routes/cliente.routes');
+const { use } = require('react');
+
 const app = express();
 
 // Middlewares globales
-app.use(cors()); // Permite peticiones de Angular
-app.use(express.json()); // Permite recibir JSON en el body de las peticiones
+app.use(cors());
+app.use(express.json());
 
-// Rutas base (Aquí conectaremos auth.routes.js más adelante)
+// Ruta de prueba
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', mensaje: 'API de Estadia Optica funcionando' });
 });
 
-// Inicialización del servidor
+// ==========================================
+// USO DE RUTAS
+// ==========================================
+// Aquí es donde el error ocurre si la variable es undefined
+app.use('/api/auth', authRoutes);
+app.use('/api/proveedores', proveedoresRoutes);
+app.use('/api/articulos', articulosRoutes);
+app.use('/api/inventario', inventarioRoutes);
+app.use('/api/clientes', clienteRoutes);
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Servidor backend corriendo en http://localhost:${PORT}`);
