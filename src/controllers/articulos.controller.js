@@ -4,7 +4,7 @@ const pool = require('../config/db');
 // ==========================================
 // CREATE: Crear un nuevo artículo (Transacción)
 // ==========================================
-exports.crearArticulo = async (req, res) => {
+const crearArticulo = async (req, res) => {
     const { 
         codigo, nombre, categoria, id_proveedor, costo, precio_venta, 
         marca, color, material, estilo, puente, diagonal, base, // Detalles del armazón/lente
@@ -74,7 +74,7 @@ exports.crearArticulo = async (req, res) => {
 // ==========================================
 // READ: Obtener artículos activos (con sus detalles e inventario)
 // ==========================================
-exports.obtenerArticulos = async (req, res) => {
+const obtenerArticulos = async (req, res) => {
     const { id_sucursal } = req.query;
 
     try {
@@ -115,7 +115,7 @@ exports.obtenerArticulos = async (req, res) => {
 // ==========================================
 // UPDATE: Actualizar datos de un artículo
 // ==========================================
-exports.actualizarArticulo = async (req, res) => {
+const actualizarArticulo = async (req, res) => {
     const { id_articulo } = req.params;
     const { 
         nombre, categoria, costo, precio_venta, 
@@ -163,7 +163,7 @@ exports.actualizarArticulo = async (req, res) => {
 // ==========================================
 // DELETE: Desactivar un artículo (Soft Delete)
 // ==========================================
-exports.desactivarArticulo = async (req, res) => {
+const desactivarArticulo = async (req, res) => {
     const { id_articulo } = req.params;
 
     try {

@@ -8,7 +8,7 @@ const proveedoresRoutes = require('./routes/proveedores.routes');
 const articulosRoutes = require('./routes/articulos.routes');
 const inventarioRoutes = require('./routes/inventario.routes');
 const clienteRoutes = require('./routes/cliente.routes');
-const { use } = require('react');
+
 
 const app = express();
 

@@ -4,7 +4,7 @@ const pool = require('../config/db');
 // ==========================================
 // ALERTAS DE STOCK
 // ==========================================
-exports.obtenerAlertasStock = async (req, res) => {
+const obtenerAlertasStock = async (req, res) => {
     const { id_sucursal } = req.query;
 
     try {
@@ -39,7 +39,7 @@ exports.obtenerAlertasStock = async (req, res) => {
 // ==========================================
 // ACTUALIZAR STOCK (Entradas o Ajustes)
 // ==========================================
-exports.actualizarStock = async (req, res) => {
+const actualizarStock = async (req, res) => {
     const { id_articulo, id_sucursal } = req.params;
     const { nuevo_stock } = req.body; 
 
@@ -69,7 +69,7 @@ exports.actualizarStock = async (req, res) => {
 // ==========================================
 // TRASLADAR STOCK (De una sucursal a otra)
 // ==========================================
-exports.trasladarStock = async (req, res) => {
+const trasladarStock = async (req, res) => {
     const { id_articulo } = req.params;
     const { id_sucursal_origen, id_sucursal_destino, cantidad, id_operador } = req.body;
 
@@ -146,7 +146,7 @@ exports.trasladarStock = async (req, res) => {
 // ==========================================
 // ACTIVAR ARTÍCULO EN NUEVA SUCURSAL
 // ==========================================
-exports.activarArticuloSucursal = async (req, res) => {
+const activarArticuloSucursal = async (req, res) => {
     const { id_articulo, id_sucursal } = req.params;
     const { stock_inicial, stock_minimo, ubicacion_estante } = req.body;
 
@@ -179,7 +179,7 @@ exports.activarArticuloSucursal = async (req, res) => {
 // ==========================================
 // CONSULTA DE ARMAZONES 
 // ==========================================
-exports.consultaArmazones = async (req, res) => {
+const consultarArmazones = async (req, res) => {
     const { id_sucursal } = req.query;
 
     if (!id_sucursal) {
@@ -211,4 +211,4 @@ exports.consultaArmazones = async (req, res) => {
     }
 };
 
-module.exports = { obtenerAlertasStock, actualizarStock, trasladarStock, activarArticuloSucursal, consultaArmazones };
+module.exports = { obtenerAlertasStock, actualizarStock, trasladarStock, activarArticuloSucursal, consultarArmazones };

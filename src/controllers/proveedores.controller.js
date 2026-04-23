@@ -1,7 +1,7 @@
 // src/controllers/proveedores.controller.js
 const db = require('../config/db'); 
 
-exports.obtenerProveedores = async (req, res) => {
+const obtenerProveedores = async (req, res) => {
     try {
         // Traemos solo los proveedores activos
         const [rows] = await db.query('SELECT * FROM PROVEEDORES WHERE activo = 1');
@@ -12,7 +12,7 @@ exports.obtenerProveedores = async (req, res) => {
     }
 };
 
-exports.crearProveedor = async (req, res) => {
+const crearProveedor = async (req, res) => {
     const { rfc, nombre, domicilio, telefono, email, creado_por } = req.body;
 
     try {
@@ -33,7 +33,7 @@ exports.crearProveedor = async (req, res) => {
     }
 };
 
-exports.desactivarProveedor = async (req, res) => {
+const desactivarProveedor = async (req, res) => {
     const { idProveedor } = req.params;
     const { modificado_por } = req.body; 
 

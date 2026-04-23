@@ -2,20 +2,32 @@ const db = require('../config/db');
 
 // Alta de Cliente
 const crearCliente = async (req, res) => {
-    const { nombre_completo, rfc, telefono, email, ocupacion } = req.body;
+    // Agregamos los campos que realmente están en tu tabla de SQL
+    const { 
+        nombre_completo, rfc, telefono, email, 
+        domicilio, colonia, cp, localidad, estado, 
+        creado_por // Este ID viene del token de quien está logueado
+    } = req.body;
 
-    if (!telefono || !email || !nombre_completo) {
+    // Validación estricta según el diagnóstico
+    if (!nombre_completo || !telefono || !email) {
         return res.status(400).json({ error: "Nombre, teléfono y email son obligatorios." });
     }
 
     try {
-        const query = `INSERT INTO clientes (nombre_completo, rfc, telefono, email, ocupacion) VALUES (?, ?, ?, ?, ?)`;
-        const [result] = await db.query(query, [nombre_completo, rfc, telefono, email, ocupacion]);
+        const query = `INSERT INTO CLIENTES 
+            (nombre_completo, rfc, telefono, email, domicilio, colonia, cp, localidad, estado, creado_por) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        
+        const [result] = await db.query(query, [
+            nombre_completo, rfc, telefono, email, 
+            domicilio, colonia, cp, localidad, estado, creado_por
+        ]);
         
         res.status(201).json({ id_cliente: result.insertId, message: "Cliente registrado exitosamente" });
     } catch (error) {
         console.error("Error al registrar cliente:", error);
-        res.status(500).json({ error: "Error interno del servidor", details: error.message });
+        res.status(500).json({ error: "Error interno del servidor" });
     }
 };
 
