@@ -8,6 +8,7 @@ const proveedoresRoutes = require('./routes/proveedores.routes');
 const articulosRoutes = require('./routes/articulos.routes');
 const inventarioRoutes = require('./routes/inventario.routes');
 const clienteRoutes = require('./routes/cliente.routes');
+const ordenRoutes = require('./routes/orden.routes');
 
 
 const app = express();
@@ -30,6 +31,7 @@ app.use('/api/proveedores', proveedoresRoutes);
 app.use('/api/articulos', articulosRoutes);
 app.use('/api/inventario', inventarioRoutes);
 app.use('/api/clientes', clienteRoutes);
+app.use('/api/ordenes', ordenRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
