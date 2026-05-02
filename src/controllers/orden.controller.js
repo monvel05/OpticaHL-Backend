@@ -1,5 +1,5 @@
 // controllers/order.controller.js
-const pool = require('../config/database');
+const pool = require('../config/db');
 
 /**
  * @module OrderController

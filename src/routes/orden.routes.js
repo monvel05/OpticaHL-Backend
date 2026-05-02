@@ -1,8 +1,9 @@
-// routes/order.routes.js
+// routes/orden.routes.js
 const express = require('express');
 const router = express.Router();
-const orderController = require('../controllers/order.controller');
-const { verificarToken, requiereRol } = require('../middlewares/auth');
+const ordenController = require('../controllers/orden.controller');
+const verifyToken = require('../middlewares/auth.middleware');
+const checkRole = require('../middlewares/rol.middleware');
 
 /**
  * =====================================================================
@@ -11,44 +12,38 @@ const { verificarToken, requiereRol } = require('../middlewares/auth');
  * =====================================================================
  */
 
-// 1. Obtener lista de órdenes (Historial)
+router.use(verifyToken);
+
 router.get(
   '/',
-  verificarToken,
-  requiereRol(['ADMINISTRADOR', 'MOSTRADOR', 'CAJERO']),
-  orderController.ObtenerOrdenes
+  checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'CAJERO']),
+  ordenController.ObtenerOrdenes
 );
 
-// 2. Crear nueva orden
+
 router.post(
   '/',
-  verificarToken,
-  requiereRol(['ADMINISTRADOR', 'MOSTRADOR']),
-  orderController.crearOrden
+  checkRole(['ADMINISTRADOR', 'MOSTRADOR']),
+  ordenController.crearOrden
 );
 
-// 3. Modificar orden existente
+
 router.put(
   '/:id',
-  verificarToken,
-  requiereRol(['ADMINISTRADOR', 'MOSTRADOR']),
-  orderController.modificarOrden
+  checkRole(['ADMINISTRADOR', 'MOSTRADOR']),
+  ordenController.modificarOrden
 );
 
-// 4. Registrar un pago / abono
 router.post(
   '/:id/pay',
-  verificarToken,
-  requiereRol(['ADMINISTRADOR', 'CAJERO']),
-  orderController.registrarPago
+  checkRole(['ADMINISTRADOR', 'CAJERO']),
+  ordenController.registrarPago
 );
 
-// 5. Cancelar orden entera
 router.post(
   '/:id/cancel', 
-  verificarToken, 
-  requiereRol(['ADMINISTRADOR']), 
-  orderController.cancelarOrden
+  checkRole(['ADMINISTRADOR']), 
+  ordenController.cancelarOrden
 );
 
 module.exports = router;
