@@ -2,8 +2,8 @@
 const express = require('express');
 const router = express.Router();
 const ordenController = require('../controllers/orden.controller');
-const verifyToken = require('../middlewares/auth.middleware');
-const checkRole = require('../middlewares/rol.middleware');
+const {verifyToken} = require('../middlewares/auth.middleware');
+const {checkRole} = require('../middlewares/rol.middleware');
 
 /**
  * =====================================================================

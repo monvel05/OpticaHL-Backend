@@ -3,8 +3,8 @@ const router = express.Router();
 const operadorController = require('../controllers/operador.controller');
 
 // Importamos los middlewares con destructuración
-const verifyToken = require('../middlewares/auth.middleware');
-const checkRole = require('../middlewares/rol.middleware');
+const {verifyToken} = require('../middlewares/auth.middleware');
+const {checkRole} = require('../middlewares/rol.middleware');
 
 
 

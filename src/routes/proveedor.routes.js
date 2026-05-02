@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const proveedorController = require('../controllers/proveedor.controller');
-const verifyToken = require('../middlewares/auth.middleware');
-const checkRole = require('../middlewares/rol.middleware');
+const {verifyToken} = require('../middlewares/auth.middleware');
+const {checkRole} = require('../middlewares/rol.middleware');
 
 router.use(verifyToken);
 

@@ -12,4 +12,4 @@ const checkRole = (rolesPermitidos) => {
     };
 };
 
-module.exports = checkRole ;
+module.exports = { checkRole };

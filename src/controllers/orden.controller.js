@@ -219,4 +219,4 @@ const cancelarOrden = async (req, res) => {
   }
 };
 
-module.exports = {crearOrden, obtenerOrdenes, registrarPago, cancelarOrden};  
+module.exports = {crearOrden, obtenerOrdenes, modificarOrden, registrarPago, cancelarOrden};  
