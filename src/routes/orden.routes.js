@@ -17,7 +17,7 @@ router.use(verifyToken);
 router.get(
   '/',
   checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'CAJERO']),
-  ordenController.ObtenerOrdenes
+  ordenController.obtenerOrdenes
 );
 
 

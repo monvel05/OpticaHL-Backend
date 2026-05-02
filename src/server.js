@@ -4,11 +4,12 @@ require('dotenv').config();
 
 // IMPORTACIÓN DE RUTAS 
 const authRoutes = require('./routes/auth.routes');
-const proveedoresRoutes = require('./routes/proveedores.routes');
-const articulosRoutes = require('./routes/articulos.routes');
+const proveedorRoutes = require('./routes/proveedor.routes');
+const articuloRoutes = require('./routes/articulo.routes');
 const inventarioRoutes = require('./routes/inventario.routes');
 const clienteRoutes = require('./routes/cliente.routes');
 const ordenRoutes = require('./routes/orden.routes');
+const operadorRoutes = require('./routes/operador.routes');
 
 
 const app = express();
@@ -27,11 +28,13 @@ app.get('/api/health', (req, res) => {
 // ==========================================
 // Aquí es donde el error ocurre si la variable es undefined
 app.use('/api/auth', authRoutes);
-app.use('/api/proveedores', proveedoresRoutes);
-app.use('/api/articulos', articulosRoutes);
+app.use('/api/proveedores', proveedorRoutes);
+app.use('/api/articulos', articuloRoutes);
 app.use('/api/inventario', inventarioRoutes);
 app.use('/api/clientes', clienteRoutes);
 app.use('/api/ordenes', ordenRoutes);
+app.use('/api/operadores', operadorRoutes);
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

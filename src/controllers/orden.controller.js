@@ -2,18 +2,18 @@
 const pool = require('../config/db');
 
 /**
- * @module OrderController
+ * @module OrdenController
  * @description Controlador para gestionar el ciclo de vida de las órdenes en el Punto de Venta.
  */
 
 /**
- * @function ObtenerOrdenes
+ * @function obtenerOrdenes
  * @description Obtiene una lista de órdenes con filtros opcionales (fecha, estatus, paciente).
  * @param {Object} req - Objeto de petición de Express. Puede contener query params para filtrado.
  * @param {Object} res - Objeto de respuesta de Express.
  * @returns {JSON} Lista de órdenes que cumplen con los criterios de búsqueda.
  */
-exports.ObtenerOrdenes = async (req, res) => {
+const obtenerOrdenes = async (req, res) => {
   const { fecha_inicio, fecha_fin, estatus, paciente_id } = req.query;
   let query = `SELECT o.id, o.fecha, o.total, o.estatus, p.nombre AS paciente_nombre FROM ORDEN o JOIN PACIENTE p ON o.paciente_id = p.id`;
 
@@ -47,7 +47,7 @@ exports.ObtenerOrdenes = async (req, res) => {
  * @param {Object} res - Objeto de respuesta de Express.
  * @returns {JSON} Objeto con el ID de la nueva orden y mensaje de éxito.
  */
-exports.crearOrden = async (req, res) => {
+const crearOrden = async (req, res) => {
   const { paciente_id, rx_id, articulos, total } = req.body;
   const usuarioId = req.usuario.id;
   const connection = await pool.getConnection();
@@ -95,7 +95,7 @@ exports.crearOrden = async (req, res) => {
  * @param {Object} req - Objeto de petición. req.params.id contiene el ID de la orden.
  * @param {Object} res - Objeto de respuesta.
  */
-exports.modificarOrden = async (req, res) => {
+const modificarOrden = async (req, res) => {
   const orderId = req.params.id;
   const { notas, fecha_entrega } = req.body;
 
@@ -117,7 +117,7 @@ exports.modificarOrden = async (req, res) => {
  * @param {Object} req - Objeto de petición. Body requiere monto y metodo_pago.
  * @param {Object} res - Objeto de respuesta.
  */
-exports.registrarPago = async (req, res) => {
+const registrarPago = async (req, res) => {
   const orderId = req.params.id;
   const { monto, metodo_pago } = req.body;
   const usuarioId = req.usuario.id;
@@ -164,7 +164,7 @@ exports.registrarPago = async (req, res) => {
  * @param {Object} req - Objeto de petición.
  * @param {Object} res - Objeto de respuesta.
  */
-exports.cancelarOrden = async (req, res) => {
+const cancelarOrden = async (req, res) => {
   const orderId = req.params.id;
   const usuarioId = req.usuario.id;
   const connection = await pool.getConnection();
@@ -218,3 +218,5 @@ exports.cancelarOrden = async (req, res) => {
     connection.release();
   }
 };
+
+module.exports = {crearOrden, obtenerOrdenes, registrarPago, cancelarOrden};  
