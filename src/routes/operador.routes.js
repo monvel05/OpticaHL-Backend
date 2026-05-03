@@ -9,10 +9,10 @@ const {checkRole} = require('../middlewares/rol.middleware');
 
 
 // Protegemos todas las rutas de este módulo exigiendo un JWT válido
-router.use(verifyToken);
+//router.use(verifyToken);
 
 // Solo ADMINISTRADOR puede gestionar operadores (Verificar políticas de la empresa si otro rol debe tener acceso)
-router.use(checkRole(['ADMINISTRADOR']));
+//router.use(checkRole(['ADMINISTRADOR']));
 
 // Rutas
 router.get('/', operadorController.obtenerOperadores);

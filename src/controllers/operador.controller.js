@@ -49,7 +49,7 @@ const obtenerOperadorPorId = async (req, res) => {
 
 // Crear un nuevo operador (Transacción ACID para Operador + Rol)
 const crearOperador = async (req, res) => {
-  const { nombre_completo, usuario_login, password, descripcion, id_rol } = req.body;
+  const { nombre_completo, usuario_login, password, id_rol } = req.body;
   const connection = await pool.getConnection();
 
   try {
@@ -65,9 +65,9 @@ const crearOperador = async (req, res) => {
 
     // 3. Insertar el operador
     const [result] = await connection.query(
-      `INSERT INTO operadores (nombre_completo, usuario_login, password_hash, descripcion, activo) 
-       VALUES (?, ?, ?, ?, 1)`,
-      [nombre_completo, usuario_login, password_hash, descripcion || null]
+      `INSERT INTO operadores (nombre_completo, usuario_login, password_hash, activo) 
+       VALUES (?, ?, ?, 1)`,
+      [nombre_completo, usuario_login, password_hash]
     );
     const id_operador = result.insertId;
 
@@ -93,7 +93,7 @@ const crearOperador = async (req, res) => {
 // Modificar datos generales de un operador (sin contraseña)
 const modificarOperador = async (req, res) => {
   const { id } = req.params;
-  const { nombre_completo, usuario_login, descripcion, id_rol } = req.body;
+  const { nombre_completo, usuario_login, id_rol } = req.body;
   const connection = await pool.getConnection();
 
   try {
@@ -101,8 +101,8 @@ const modificarOperador = async (req, res) => {
 
     // Actualizar datos del operador
     await connection.query(
-      `UPDATE operadores SET nombre_completo = ?, usuario_login = ?, descripcion = ? WHERE id_operador = ?`,
-      [nombre_completo, usuario_login, descripcion, id]
+      `UPDATE operadores SET nombre_completo = ?, usuario_login = ? WHERE id_operador = ?`,
+      [nombre_completo, usuario_login, id]
     );
 
     // Actualizar rol (Se elimina el anterior y se inserta el nuevo)

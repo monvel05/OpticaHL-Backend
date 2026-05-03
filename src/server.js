@@ -10,6 +10,7 @@ const inventarioRoutes = require('./routes/inventario.routes');
 const clienteRoutes = require('./routes/cliente.routes');
 const ordenRoutes = require('./routes/orden.routes');
 const operadorRoutes = require('./routes/operador.routes');
+const cajaRoutes = require('./routes/caja.routes');
 
 
 const app = express();
@@ -34,6 +35,7 @@ app.use('/api/inventario', inventarioRoutes);
 app.use('/api/clientes', clienteRoutes);
 app.use('/api/ordenes', ordenRoutes);
 app.use('/api/operadores', operadorRoutes);
+app.use('/api/caja', cajaRoutes);
 
 
 const PORT = process.env.PORT || 3000;
