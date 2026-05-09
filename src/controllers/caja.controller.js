@@ -48,7 +48,6 @@ const obtenerOrdenParaCobro = async (req, res) => {
 
 // Procesar el pago con Control de Concurrencia 
 const procesarPago = async (req, res) => {
-    // Ajustado a los campos del MER: metodo_pago e id_sucursal
     const { folio, monto, metodo_pago, id_sucursal } = req.body; 
     
     // Obtenemos el ID del operador desde el token JWT 
