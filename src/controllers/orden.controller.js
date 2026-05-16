@@ -219,4 +219,31 @@ const cancelarOrden = async (req, res) => {
   }
 };
 
-module.exports = {crearOrden, obtenerOrdenes, modificarOrden, registrarPago, cancelarOrden};  
+/**
+ * @function obtenerCuentasPorCobrar
+ * @description Obtiene las órdenes que tienen un saldo pendiente (cuentas por cobrar).
+ */
+const obtenerCuentasPorCobrar = async (req, res) => {
+  try {
+    const query = `
+      SELECT o.id AS orden_id, o.fecha, o.estatus, o.total, p.nombre AS paciente_nombre,
+             IFNULL(SUM(c.monto), 0) AS total_pagado,
+             (o.total - IFNULL(SUM(c.monto), 0)) AS saldo_pendiente
+      FROM ORDEN o
+      JOIN PACIENTE p ON o.paciente_id = p.id
+      LEFT JOIN CAJA c ON o.id = c.orden_id AND c.tipo_movimiento = 'ENTRADA'
+      WHERE o.estatus IN ('Pendiente', 'Con Anticipo')
+      GROUP BY o.id
+      HAVING saldo_pendiente > 0
+      ORDER BY o.fecha ASC
+    `;
+    
+    const [cuentas] = await pool.query(query);
+    res.status(200).json({ exito: true, datos: cuentas });
+  } catch (error) {
+    console.error('Error al obtener cuentas por cobrar:', error);
+    res.status(500).json({ exito: false, mensaje: 'Error al obtener las cuentas por cobrar.' });
+  }
+};
+
+module.exports = {crearOrden, obtenerOrdenes, modificarOrden, registrarPago, cancelarOrden, obtenerCuentasPorCobrar};  

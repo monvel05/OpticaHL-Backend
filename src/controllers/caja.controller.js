@@ -109,6 +109,9 @@ const procesarPago = async (req, res) => {
         // CONFIRMAR LA TRANSACCIÓN
         await connection.commit();
 
+        // Enviar recibo de pago por correo
+        await enviarReciboPago(orden.email, orden.nombre_completo, folio, pagoIngresado, nuevoSaldo);
+
         res.status(200).json({
             mensaje: 'Pago procesado y registrado correctamente',
             recibo: {
@@ -128,4 +131,58 @@ const procesarPago = async (req, res) => {
     }
 };
 
-module.exports = {obtenerOrdenParaCobro, procesarPago};
+// Asegúrate de importar nodemailer en este archivo también
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail', // Se cambiará cuando tengas las credenciales
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+/**
+ * @function enviarReciboPago
+ * @description Envía un comprobante de abono o liquidación al correo del paciente.
+ */
+const enviarReciboPago = async (emailDestino, nombreCliente, folioOrden, montoPagado, saldoRestante) => {
+  if (!emailDestino) return; // Si el cliente no tiene correo, salimos silenciosamente
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: emailDestino,
+    subject: `Recibo de Pago - Óptica HL (Orden: ${folioOrden})`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+        <h2 style="color: #2c3e50;">¡Gracias por tu pago, ${nombreCliente}!</h2>
+        <p>Hemos registrado exitosamente un pago en tu cuenta.</p>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+          <tr style="background-color: #f8f9fa;">
+            <td style="padding: 10px; border: 1px solid #ddd;"><b>Folio de Orden:</b></td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${folioOrden}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border: 1px solid #ddd;"><b>Monto Pagado:</b></td>
+            <td style="padding: 10px; border: 1px solid #ddd; color: green;">$${parseFloat(montoPagado).toFixed(2)}</td>
+          </tr>
+          <tr style="background-color: #f8f9fa;">
+            <td style="padding: 10px; border: 1px solid #ddd;"><b>Saldo Restante:</b></td>
+            <td style="padding: 10px; border: 1px solid #ddd; color: red;">$${parseFloat(saldoRestante).toFixed(2)}</td>
+          </tr>
+        </table>
+        <p style="margin-top: 20px;">Si requieres factura electrónica, por favor solicítala en mostrador.</p>
+        <p>Atentamente,<br><b>El equipo de Óptica HL</b></p>
+      </div>
+    `
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`Recibo enviado a ${emailDestino} por la orden ${folioOrden}`);
+  } catch (error) {
+    console.error('Error enviando el recibo de pago:', error);
+  }
+};
+
+module.exports = {obtenerOrdenParaCobro, procesarPago, enviarReciboPago};

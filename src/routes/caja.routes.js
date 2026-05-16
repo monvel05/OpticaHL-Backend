@@ -15,4 +15,7 @@ router.get('/orden/:folio', cajaController.obtenerOrdenParaCobro);
 // Procesar el pago 
 router.post('/pago', cajaController.procesarPago);
 
+// Enviar recibo de pago por correo, esta ruta es por si se necesita reenviar el recibo de pago
+router.post('/enviarRecibo', cajaController.enviarReciboPago);
+
 module.exports = router;
