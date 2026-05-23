@@ -1,15 +1,13 @@
-const db = require('../config/db'); 
+const pool = require('../config/db'); // Cambiado a pool
 
 // Alta de Cliente
 const crearCliente = async (req, res) => {
-    // Agregamos los campos que realmente están en tu tabla de SQL
     const { 
         nombre_completo, rfc, telefono, email, 
         domicilio, colonia, cp, localidad, estado, 
-        creado_por // Este ID viene del token de quien está logueado
+        creado_por
     } = req.body;
 
-    // Validación estricta según el diagnóstico
     if (!nombre_completo || !telefono || !email) {
         return res.status(400).json({ error: "Nombre, teléfono y email son obligatorios." });
     }
@@ -19,7 +17,7 @@ const crearCliente = async (req, res) => {
             (nombre_completo, rfc, telefono, email, domicilio, colonia, cp, localidad, estado, creado_por) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
         
-        const [result] = await db.query(query, [
+        const [result] = await pool.query(query, [
             nombre_completo, rfc, telefono, email, 
             domicilio, colonia, cp, localidad, estado, creado_por
         ]);
@@ -45,7 +43,7 @@ const obtenerHistorial = async (req, res) => {
             WHERE o.id_cliente = ?
             ORDER BY o.fecha_emision DESC`;
 
-        const [historial] = await db.query(query, [clienteId]);
+        const [historial] = await pool.query(query, [clienteId]);
         res.json(historial);
     } catch (error) {
         console.error("Error al recuperar el historial:", error);
@@ -55,7 +53,7 @@ const obtenerHistorial = async (req, res) => {
 
 // Búsqueda rápida para el mostrador
 const buscarClientes = async (req, res) => {
-    const { q } = req.query; // se debe poner el la url> /q=(valor)
+    const { q } = req.query; 
     
     if (!q) {
         return res.status(400).json({ error: "Debes proporcionar un término de búsqueda." });
@@ -68,7 +66,7 @@ const buscarClientes = async (req, res) => {
             WHERE nombre_completo LIKE ? OR telefono LIKE ?
             LIMIT 20`;
         const searchTerm = `%${q}%`;
-        const [clientes] = await db.query(query, [searchTerm, searchTerm]);
+        const [clientes] = await pool.query(query, [searchTerm, searchTerm]);
         
         res.json(clientes);
     } catch (error) {
@@ -77,41 +75,37 @@ const buscarClientes = async (req, res) => {
     }
 };
 
+// Guardar nueva receta (Manejo de Transacción con Pool)
 const guardarNuevaRX = async (req, res) => {
     const clienteId = req.params.id;
     const id_operador = req.user.id; 
     
-    // Datos obtenidos del frontend
     const { ojo, esfera, cilindro, eje, adicion, distancia_pupilar, observaciones } = req.body;
 
-
-    const conexion = await db.getConnection();
+    // Tomamos una conexión exclusiva del pool para la transacción
+    const connection = await pool.getConnection();
 
     try {
-        await conexion.beginTransaction();
+        await connection.beginTransaction();
 
-        // Generamos un folio para esta orden clínica (Ej: RX-20260415-12)
-        const folio_orden = `RX-${Date.now()}-${this.clienteId}`; 
+        const folio_orden = `RX-${Date.now()}-${clienteId}`; 
 
-        // Insertamos la Orden (vinculando al paciente y al optometrista/operador)
         const queryOrden = `
             INSERT INTO orden (folio, id_cliente, id_operador, fecha_emision, estatus, total) 
             VALUES (?, ?, ?, NOW(), 'Clinica', 0.00)
         `;
-        await conexion.execute(queryOrden, [folio_orden, clienteId, id_operador]);
+        await connection.query(queryOrden, [folio_orden, clienteId, id_operador]);
 
-        // Insertamos la Graduación (RX) vinculada al folio que acabamos de crear
         const queryGraduacion = `
             INSERT INTO graduacion_orden 
             (folio_orden, ojo, esfera, cilindro, eje, adicion, distancia_pupilar, observaciones) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
-        await conexion.execute(queryGraduacion, [
+        await connection.query(queryGraduacion, [
             folio_orden, ojo, esfera, cilindro, eje, adicion, distancia_pupilar, observaciones
         ]);
 
-        // Confirmamos los cambios en la BD
-        await conexion.commit();
+        await connection.commit();
 
         res.status(201).json({ 
             success: true, 
@@ -120,12 +114,12 @@ const guardarNuevaRX = async (req, res) => {
         });
 
     } catch (error) {
-        // Si algo falla (ej. falta un dato), deshacemos todo para no dejar datos huérfanos
-        await conexion.rollback();
+        await connection.rollback();
         console.error("Error al guardar RX:", error);
         res.status(500).json({ error: "Error al guardar el historial clínico." });
     } finally {
-        conexion.release(); //IMPORTANTE: SIEMPRE LIBERAR LA CONEXION
+        // Liberamos la conexión de vuelta al pool
+        connection.release(); 
     }
 };
 

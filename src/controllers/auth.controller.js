@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const db = require('../config/db');
+const pool = require('../config/db'); // Cambiado a pool
 
 const login = async (req, res) => {
     const { usuario, password, sucursal_actual } = req.body;
@@ -10,7 +10,7 @@ const login = async (req, res) => {
     }
 
     try {
-        const [users] = await db.query(
+        const [users] = await pool.query(
             'SELECT * FROM OPERADORES WHERE usuario_login = ? AND activo = 1', 
             [usuario]
         );
@@ -21,7 +21,6 @@ const login = async (req, res) => {
 
         const user = users[0];
 
-
         const validPass = await bcrypt.compare(password, user.password_hash);
         
         if (!validPass) {
@@ -29,7 +28,7 @@ const login = async (req, res) => {
             return res.status(401).json({ message: "Contraseña incorrecta." });
         }
 
-        const [rolesData] = await db.query(`
+        const [rolesData] = await pool.query(`
             SELECT r.nombre_rol FROM OPERADOR_ROLES orol
             JOIN ROLES r ON orol.id_rol = r.id_rol
             WHERE orol.id_operador = ?

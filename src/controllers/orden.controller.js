@@ -1,53 +1,5 @@
-// controllers/order.controller.js
 const pool = require('../config/db');
 
-/**
- * @module OrdenController
- * @description Controlador para gestionar el ciclo de vida de las órdenes en el Punto de Venta.
- */
-
-/**
- * @function obtenerOrdenes
- * @description Obtiene una lista de órdenes con filtros opcionales (fecha, estatus, paciente).
- * @param {Object} req - Objeto de petición de Express. Puede contener query params para filtrado.
- * @param {Object} res - Objeto de respuesta de Express.
- * @returns {JSON} Lista de órdenes que cumplen con los criterios de búsqueda.
- */
-const obtenerOrdenes = async (req, res) => {
-  const { fecha_inicio, fecha_fin, estatus, paciente_id } = req.query;
-  let query = `SELECT o.id, o.fecha, o.total, o.estatus, p.nombre AS paciente_nombre FROM ORDEN o JOIN PACIENTE p ON o.paciente_id = p.id`;
-
-  const params = [];
-  if (fecha_inicio && fecha_fin) {
-    query += ` WHERE o.fecha BETWEEN ? AND ?`;
-    params.push(fecha_inicio, fecha_fin);
-  }
-  if (estatus) {
-    query += params.length ? ` AND o.estatus = ?` : ` WHERE o.estatus = ?`;
-    params.push(estatus);
-  }
-  if (paciente_id) {
-    query += params.length ? ` AND o.paciente_id = ?` : ` WHERE o.paciente_id = ?`;
-    params.push(paciente_id);
-  }
-
-  try {
-    const [ordenes] = await pool.query(query, params);
-    res.status(200).json({ exito: true, datos: ordenes });
-  } catch (error) {
-    console.error('Error al obtener órdenes:', error);
-    res.status(500).json({ exito: false, mensaje: 'Error al obtener las órdenes.' });
-  }
-};
-
-/**
- * @function crearOrden
- * @description Crea una nueva orden, sus detalles y descuenta el inventario. Utiliza transacciones ACID.
- * @param {Object} req - Objeto de petición de Express. Debe contener id_cliente, id_sucursal, articulos y total.
- * @param {Object} res - Objeto de respuesta de Express.
- * @returns {JSON} Objeto con el folio de la nueva orden y mensaje de éxito.
- */
-// En src/controllers/orden.controller.js
 const crearOrden = async (req, res) => {
   const { id_cliente, id_sucursal, articulos, total } = req.body;
   const id_operador = req.usuario.id; 
@@ -56,15 +8,13 @@ const crearOrden = async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    // 1. Crear el encabezado de la orden 
-    const folio_orden = `ORD-${this.id_sucursal}${Date.now()}`; // Generamos un folio único con la sucursal y timestamp
+    const folio_orden = `ORD-${id_sucursal}-${Date.now()}`; 
     await connection.query(
       `INSERT INTO orden (folio, id_sucursal, fecha_emision, id_cliente, id_operador, total, estatus) 
        VALUES (?, ?, NOW(), ?, ?, ?, 'Pendiente')`,
       [folio_orden, id_sucursal, id_cliente, id_operador, total]
     );
 
-    // 2. Insertar los detalles en detalle_venta 
     for (let item of articulos) {
       await connection.query(
         `INSERT INTO detalle_venta (folio_orden, id_articulo, cantidad, precio_unitario) 
@@ -72,7 +22,6 @@ const crearOrden = async (req, res) => {
         [folio_orden, item.id_articulo, item.cantidad, item.precio]
       );
 
-      // Descontar inventario de la tabla inventario_sucursal
       await connection.query(
         `UPDATE inventario_sucursal 
          SET stock_actual = stock_actual - ? 
@@ -92,20 +41,43 @@ const crearOrden = async (req, res) => {
   }
 };
 
-/**
- * @function modificarOrden
- * @description Permite actualizar datos generales de una orden (ej. notas, fecha de entrega prometida).
- * @param {Object} req - Objeto de petición. req.params.id contiene el ID de la orden.
- * @param {Object} res - Objeto de respuesta.
- */
+const obtenerOrdenes = async (req, res) => {
+  const { fecha_inicio, fecha_fin, estatus, id_cliente } = req.query;
+  // CAMBIO: Ahora usamos 'clientes' en lugar de 'PACIENTE'
+  let query = `SELECT o.folio, o.fecha_emision, o.total, o.estatus, c.nombre_completo AS paciente_nombre 
+               FROM orden o JOIN clientes c ON o.id_cliente = c.id_cliente`;
+
+  const params = [];
+  if (fecha_inicio && fecha_fin) {
+    query += ` WHERE DATE(o.fecha_emision) BETWEEN ? AND ?`;
+    params.push(fecha_inicio, fecha_fin);
+  }
+  if (estatus) {
+    query += params.length ? ` AND o.estatus = ?` : ` WHERE o.estatus = ?`;
+    params.push(estatus);
+  }
+  if (id_cliente) {
+    query += params.length ? ` AND o.id_cliente = ?` : ` WHERE o.id_cliente = ?`;
+    params.push(id_cliente);
+  }
+
+  try {
+    const [ordenes] = await pool.query(query, params);
+    res.status(200).json({ exito: true, datos: ordenes });
+  } catch (error) {
+    console.error('Error al obtener órdenes:', error);
+    res.status(500).json({ exito: false, mensaje: 'Error al obtener las órdenes.' });
+  }
+};
+
 const modificarOrden = async (req, res) => {
-  const orderId = req.params.id;
-  const { notas, fecha_entrega } = req.body;
+  const folio = req.params.id; // Ahora usamos folio en lugar de ID
+  const { estatus } = req.body; 
 
   try {
     await pool.query(
-      `UPDATE ORDEN SET notas = ?, fecha_entrega = ? WHERE id = ?`,
-      [notas, fecha_entrega, orderId]
+      `UPDATE orden SET estatus = ? WHERE folio = ?`,
+      [estatus, folio]
     );
     res.status(200).json({ exito: true, mensaje: 'Orden actualizada correctamente.' });
   } catch (error) {
@@ -114,40 +86,32 @@ const modificarOrden = async (req, res) => {
   }
 };
 
-/**
- * @function registrarPago
- * @description Registra un abono o liquidación a una orden y actualiza su saldo/estatus.
- * @param {Object} req - Objeto de petición. Body requiere monto y metodo_pago.
- * @param {Object} res - Objeto de respuesta.
- */
 const registrarPago = async (req, res) => {
-  const orderId = req.params.id;
-  const { monto, metodo_pago } = req.body;
+  const folio = req.params.id;
+  const { monto, metodo_pago, id_sucursal } = req.body;
   const usuarioId = req.usuario.id;
   const connection = await pool.getConnection();
 
   try {
     await connection.beginTransaction();
 
-    // 1. Ingresar el dinero a caja
+    // CAMBIO: Ahora insertamos en movimientos_caja en lugar de CAJA
     await connection.query(
-      `INSERT INTO CAJA (fecha, concepto, tipo_movimiento, forma_pago, monto, orden_id, operador_id) 
-       VALUES (NOW(), 'Abono a Orden', 'ENTRADA', ?, ?, ?, ?)`,
-      [metodo_pago, monto, orderId, usuarioId]
+      `INSERT INTO movimientos_caja (id_sucursal, id_operador, folio_orden, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
+       VALUES (?, ?, ?, 'ENTRADA', ?, ?, NOW(), 'Abono a Orden')`,
+      [id_sucursal, usuarioId, folio, metodo_pago, monto]
     );
 
-    // 2. Verificar el saldo restante de la orden
     const [pagos] = await connection.query(
-      `SELECT SUM(monto) as totalPagado FROM CAJA WHERE orden_id = ? AND tipo_movimiento = 'ENTRADA'`,
-      [orderId]
+      `SELECT SUM(monto) as totalPagado FROM movimientos_caja WHERE folio_orden = ? AND tipo_movimiento = 'ENTRADA'`,
+      [folio]
     );
-    const [orden] = await connection.query(`SELECT total FROM ORDEN WHERE id = ?`, [orderId]);
+    const [orden] = await connection.query(`SELECT total FROM orden WHERE folio = ?`, [folio]);
     
-    // 3. Cambiar estatus si ya se liquidó
     if (pagos[0].totalPagado >= orden[0].total) {
-      await connection.query(`UPDATE ORDEN SET estatus = 'Liquidada' WHERE id = ?`, [orderId]);
+      await connection.query(`UPDATE orden SET estatus = 'Liquidada' WHERE folio = ?`, [folio]);
     } else {
-      await connection.query(`UPDATE ORDEN SET estatus = 'Con Anticipo' WHERE id = ?`, [orderId]);
+      await connection.query(`UPDATE orden SET estatus = 'Con Anticipo' WHERE folio = ?`, [folio]);
     }
 
     await connection.commit();
@@ -161,58 +125,47 @@ const registrarPago = async (req, res) => {
   }
 };
 
-/**
- * @function cancelarOrden
- * @description Cancela una orden, regresa el stock al inventario y genera una nota de devolución en caja.
- * @param {Object} req - Objeto de petición.
- * @param {Object} res - Objeto de respuesta.
- */
 const cancelarOrden = async (req, res) => {
-  const orderId = req.params.id;
+  const folio = req.params.id;
   const usuarioId = req.usuario.id;
+  const { id_sucursal } = req.body; // Necesitamos saber la sucursal para devolver stock
   const connection = await pool.getConnection();
 
   try {
     await connection.beginTransaction();
 
-    // Bloqueo por concurrencia
-    const [ordenRows] = await connection.query(
-      'SELECT estatus FROM ORDEN WHERE id = ? FOR UPDATE', 
-      [orderId]
-    );
-
+    const [ordenRows] = await connection.query('SELECT estatus FROM orden WHERE folio = ? FOR UPDATE', [folio]);
     if (ordenRows.length === 0) throw new Error('La orden no existe.');
     if (ordenRows[0].estatus === 'Cancelada') throw new Error('Esta orden ya fue cancelada previamente.');
 
-    // Estatus a Cancelada
-    await connection.query('UPDATE ORDEN SET estatus = "Cancelada" WHERE id = ?', [orderId]);
+    await connection.query('UPDATE orden SET estatus = "Cancelada" WHERE folio = ?', [folio]);
 
-    // Devolver Inventario
-    const [detalles] = await connection.query('SELECT articulo_id, cantidad FROM DETORD WHERE orden_id = ?', [orderId]);
+    // CAMBIO: Usamos detalle_venta e inventario_sucursal
+    const [detalles] = await connection.query('SELECT id_articulo, cantidad FROM detalle_venta WHERE folio_orden = ?', [folio]);
     for (let item of detalles) {
       await connection.query(
-        'UPDATE ARTICULO SET existencias = existencias + ? WHERE id = ?',
-        [item.cantidad, item.articulo_id]
+        'UPDATE inventario_sucursal SET stock_actual = stock_actual + ? WHERE id_articulo = ? AND id_sucursal = ?',
+        [item.cantidad, item.id_articulo, id_sucursal]
       );
     }
 
-    // Regresar dinero
+    // CAMBIO: Checamos en movimientos_caja
     const [pagosRows] = await connection.query(
-      'SELECT IFNULL(SUM(monto), 0) as totalPagado FROM CAJA WHERE orden_id = ? AND tipo_movimiento = "ENTRADA"',
-      [orderId]
+      'SELECT IFNULL(SUM(monto), 0) as totalPagado FROM movimientos_caja WHERE folio_orden = ? AND tipo_movimiento = "ENTRADA"',
+      [folio]
     );
     const totalDevolver = pagosRows[0].totalPagado;
 
     if (totalDevolver > 0) {
       await connection.query(
-        `INSERT INTO CAJA (fecha, concepto, tipo_movimiento, monto, orden_id, operador_id) 
-         VALUES (NOW(), 'Devolución por Cancelación', 'SALIDA', ?, ?, ?)`,
-        [totalDevolver, orderId, usuarioId]
+        `INSERT INTO movimientos_caja (id_sucursal, id_operador, folio_orden, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
+         VALUES (?, ?, ?, 'SALIDA', 'Efectivo', ?, NOW(), 'Devolución por Cancelación')`,
+        [id_sucursal, usuarioId, folio, totalDevolver]
       );
     }
 
     await connection.commit();
-    res.status(200).json({ exito: true, mensaje: 'Orden cancelada, inventario restaurado y dinero devuelto en sistema.' });
+    res.status(200).json({ exito: true, mensaje: 'Orden cancelada, inventario restaurado y dinero devuelto en caja.' });
   } catch (error) {
     await connection.rollback();
     console.error('Error en cancelación:', error.message);
@@ -222,23 +175,20 @@ const cancelarOrden = async (req, res) => {
   }
 };
 
-/**
- * @function obtenerCuentasPorCobrar
- * @description Obtiene las órdenes que tienen un saldo pendiente (cuentas por cobrar).
- */
 const obtenerCuentasPorCobrar = async (req, res) => {
   try {
+    // CAMBIO: Ahora usamos orden, clientes y movimientos_caja
     const query = `
-      SELECT o.id AS orden_id, o.fecha, o.estatus, o.total, p.nombre AS paciente_nombre,
-             IFNULL(SUM(c.monto), 0) AS total_pagado,
-             (o.total - IFNULL(SUM(c.monto), 0)) AS saldo_pendiente
-      FROM ORDEN o
-      JOIN PACIENTE p ON o.paciente_id = p.id
-      LEFT JOIN CAJA c ON o.id = c.orden_id AND c.tipo_movimiento = 'ENTRADA'
+      SELECT o.folio AS orden_id, o.fecha_emision AS fecha, o.estatus, o.total, c.nombre_completo AS paciente_nombre,
+             IFNULL(SUM(m.monto), 0) AS total_pagado,
+             (o.total - IFNULL(SUM(m.monto), 0)) AS saldo_pendiente
+      FROM orden o
+      JOIN clientes c ON o.id_cliente = c.id_cliente
+      LEFT JOIN movimientos_caja m ON o.folio = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
       WHERE o.estatus IN ('Pendiente', 'Con Anticipo')
-      GROUP BY o.id
+      GROUP BY o.folio
       HAVING saldo_pendiente > 0
-      ORDER BY o.fecha ASC
+      ORDER BY o.fecha_emision ASC
     `;
     
     const [cuentas] = await pool.query(query);
@@ -249,6 +199,4 @@ const obtenerCuentasPorCobrar = async (req, res) => {
   }
 };
 
-
-
-module.exports = {crearOrden, obtenerOrdenes, modificarOrden, registrarPago, cancelarOrden, obtenerCuentasPorCobrar};  
+module.exports = {crearOrden, obtenerOrdenes, modificarOrden, registrarPago, cancelarOrden, obtenerCuentasPorCobrar};
