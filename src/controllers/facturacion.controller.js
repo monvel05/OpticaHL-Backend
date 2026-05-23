@@ -57,6 +57,10 @@ const timbrarFactura = async (req, res) => {
     const iva_trasladado = total - subtotal;
     const descuento = 0.00; // Asumiendo 0 por ahora, puedes ajustarlo a tu lógica
 
+    // Extraemos los nombres personalizados del body (si el contador los envía)
+    // Ejemplo de formato esperado: nombres_personalizados: [{ id_articulo: 1, nombre_factura: "Lente oftálmico genérico" }]
+    const nombres_personalizados = req.body.nombres_personalizados || [];
+
     // 4. Armar el JSON requerido por la API del PAC (Facte)
     const payloadFacte = {
       Receptor: {
@@ -66,13 +70,19 @@ const timbrarFactura = async (req, res) => {
         DomicilioFiscalReceptor: orden.cp,
         RegimenFiscalReceptor: regimen_fiscal
       },
-      Conceptos: detalles.map(item => ({
-        ClaveProdServ: "42142902", // Código SAT genérico
-        Cantidad: item.cantidad,
-        Descripcion: item.nombre,
-        ValorUnitario: parseFloat(item.precio_unitario) / 1.16,
-        Importe: (parseFloat(item.precio_unitario) / 1.16) * item.cantidad
-      }))
+      Conceptos: detalles.map(item => {
+        // Buscamos si el contador sobrescribió el nombre para este artículo
+        const nombreCustom = nombres_personalizados.find(n => n.id_articulo === item.id_articulo);
+        const descripcionFinal = nombreCustom ? nombreCustom.nombre_factura : item.nombre;
+
+        return {
+          ClaveProdServ: "42142902", // Clave genérica para lentes oftálmicos, puedes ajustar 
+          Cantidad: item.cantidad,
+          Descripcion: descripcionFinal, // Usamos el nombre modificado o el original
+          ValorUnitario: parseFloat(item.precio_unitario) / 1.16,
+          Importe: (parseFloat(item.precio_unitario) / 1.16) * item.cantidad
+        };
+      })
     };
 
     // 5. Llamada a la API de Facte (Axios)

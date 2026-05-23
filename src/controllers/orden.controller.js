@@ -43,43 +43,46 @@ const obtenerOrdenes = async (req, res) => {
 /**
  * @function crearOrden
  * @description Crea una nueva orden, sus detalles y descuenta el inventario. Utiliza transacciones ACID.
- * @param {Object} req - Objeto de petición de Express. Debe contener paciente_id, rx_id, total y arreglo de articulos.
+ * @param {Object} req - Objeto de petición de Express. Debe contener id_cliente, id_sucursal, articulos y total.
  * @param {Object} res - Objeto de respuesta de Express.
- * @returns {JSON} Objeto con el ID de la nueva orden y mensaje de éxito.
+ * @returns {JSON} Objeto con el folio de la nueva orden y mensaje de éxito.
  */
+// En src/controllers/orden.controller.js
 const crearOrden = async (req, res) => {
-  const { paciente_id, rx_id, articulos, total } = req.body;
-  const usuarioId = req.usuario.id;
+  const { id_cliente, id_sucursal, articulos, total } = req.body;
+  const id_operador = req.usuario.id; 
   const connection = await pool.getConnection();
 
   try {
     await connection.beginTransaction();
 
-    // 1. Crear el encabezado de la orden
-    const [ordenResult] = await connection.query(
-      `INSERT INTO ORDEN (paciente_id, historial_id, fecha, total, estatus, operador_id) 
-       VALUES (?, ?, NOW(), ?, 'Pendiente', ?)`,
-      [paciente_id, rx_id, total, usuarioId]
+    // 1. Crear el encabezado de la orden 
+    const folio_orden = `ORD-${this.id_sucursal}${Date.now()}`; // Generamos un folio único con la sucursal y timestamp
+    await connection.query(
+      `INSERT INTO orden (folio, id_sucursal, fecha_emision, id_cliente, id_operador, total, estatus) 
+       VALUES (?, ?, NOW(), ?, ?, ?, 'Pendiente')`,
+      [folio_orden, id_sucursal, id_cliente, id_operador, total]
     );
-    const nuevaOrdenId = ordenResult.insertId;
 
-    // 2. Insertar los detalles y descontar inventario
+    // 2. Insertar los detalles en detalle_venta 
     for (let item of articulos) {
       await connection.query(
-        `INSERT INTO DETORD (orden_id, articulo_id, cantidad, precio_unitario) 
+        `INSERT INTO detalle_venta (folio_orden, id_articulo, cantidad, precio_unitario) 
          VALUES (?, ?, ?, ?)`,
-        [nuevaOrdenId, item.id, item.cantidad, item.precio]
+        [folio_orden, item.id_articulo, item.cantidad, item.precio]
       );
 
-      // Bloqueamos y descontamos el stock para evitar ventas fantasma
+      // Descontar inventario de la tabla inventario_sucursal
       await connection.query(
-        `UPDATE ARTICULO SET existencias = existencias - ? WHERE id = ? AND existencias >= ?`,
-        [item.cantidad, item.id, item.cantidad]
+        `UPDATE inventario_sucursal 
+         SET stock_actual = stock_actual - ? 
+         WHERE id_articulo = ? AND id_sucursal = ? AND stock_actual >= ?`,
+        [item.cantidad, item.id_articulo, id_sucursal, item.cantidad]
       );
     }
 
     await connection.commit();
-    res.status(201).json({ exito: true, mensaje: 'Orden creada con éxito', ordenId: nuevaOrdenId });
+    res.status(201).json({ exito: true, mensaje: 'Orden creada con éxito', folio: folio_orden });
   } catch (error) {
     await connection.rollback();
     console.error('Error al crear orden:', error);
@@ -245,5 +248,7 @@ const obtenerCuentasPorCobrar = async (req, res) => {
     res.status(500).json({ exito: false, mensaje: 'Error al obtener las cuentas por cobrar.' });
   }
 };
+
+
 
 module.exports = {crearOrden, obtenerOrdenes, modificarOrden, registrarPago, cancelarOrden, obtenerCuentasPorCobrar};  

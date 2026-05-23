@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
+require('./services/recordatorio.service'); // Importamos el servicio de recordatorios para que se ejecute el cron 
 
 // IMPORTACIÓN DE RUTAS 
 const authRoutes = require('./routes/auth.routes');

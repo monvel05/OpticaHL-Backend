@@ -1,13 +1,13 @@
 const pool = require("../config/db");
 
 // Reporte para mostrar artículos con stock crítico
-const getReporteStockCritico = async (req, res) => {
+const obtenerReporteStockCritico = async (req, res) => {
   try {
     const [rows] = await pool.query("CALL sp_ReporteStockCritico()");
     // Al llamar un SP, MySQL devuelve un arreglo de arreglos. El índice [0] tiene los datos.
     res.status(200).json({ success: true, data: rows[0] });
   } catch (error) {
-    console.error("Error en getReporteStockCritico:", error);
+    console.error("Error en obtenerReporteStockCritico:", error);
     res
       .status(500)
       .json({
@@ -18,7 +18,7 @@ const getReporteStockCritico = async (req, res) => {
 };
 
 // Reporte para mostrar productividad de operadores en un rango de fechas
-const getReporteProductividad = async (req, res) => {
+const obtenerReporteProductividad = async (req, res) => {
   try {
     const { fechaInicio, fechaFin } = req.query;
 
@@ -37,7 +37,7 @@ const getReporteProductividad = async (req, res) => {
     ]);
     res.status(200).json({ success: true, data: rows[0] });
   } catch (error) {
-    console.error("Error en getReporteProductividad:", error);
+    console.error("Error en obtenerReporteProductividad:", error);
     res
       .status(500)
       .json({
@@ -48,7 +48,7 @@ const getReporteProductividad = async (req, res) => {
 };
 
 // Reporte para mostrar ingresos por caja en un rango de fechas, con opción de filtrar por sucursal
-const getReporteIngresosCaja = async (req, res) => {
+const obtenerReporteIngresosCaja = async (req, res) => {
   try {
     const { fechaInicio, fechaFin, idSucursal } = req.query;
 
@@ -71,7 +71,7 @@ const getReporteIngresosCaja = async (req, res) => {
     ]);
     res.status(200).json({ success: true, data: rows[0] });
   } catch (error) {
-    console.error("Error en getReporteIngresosCaja:", error);
+    console.error("Error en obtenerReporteIngresosCaja:", error);
     res
       .status(500)
       .json({
@@ -275,13 +275,68 @@ const obtenerProductividadOperadores = async (req, res) => {
   }
 };
 
+/**
+ * Reporte de Descuentos Mensuales 
+ * @description Muestra las órdenes o facturas donde se aplicó un descuento en un mes específico.
+ */
+const obtenerReporteDescuentos = async (req, res) => {
+  const mes = req.query.mes || new Date().getMonth() + 1;
+  const anio = req.query.anio || new Date().getFullYear();
+
+  try {
+    const query = `
+      SELECT f.num_factura, f.folio_orden, f.fecha, c.nombre_completo AS cliente, 
+             f.subtotal, f.descuento, f.total
+      FROM factura f
+      JOIN clientes c ON f.id_cliente = c.id_cliente
+      WHERE f.descuento > 0 
+        AND MONTH(f.fecha) = ? AND YEAR(f.fecha) = ?
+      ORDER BY f.fecha DESC
+    `;
+    const [resultados] = await pool.query(query, [mes, anio]);
+    res.status(200).json({ exito: true, periodo: `${mes}/${anio}`, datos: resultados });
+  } catch (error) {
+    console.error("Error en obtenerReporteDescuentos:", error);
+    res.status(500).json({ exito: false, mensaje: "Error al generar reporte de descuentos." });
+  }
+};
+
+/**
+ * Reporte Completo de Ventas 
+ * @description Cruce de datos entre órdenes, clientes y movimientos de caja.
+ */
+const obtenerReporteVentasCompleto = async (req, res) => {
+  const { fechaInicio, fechaFin } = req.query;
+
+  try {
+    const query = `
+      SELECT o.folio, o.fecha_emision, c.nombre_completo AS cliente, 
+             o.total AS total_orden, o.estatus,
+             IFNULL(SUM(m.monto), 0) AS total_pagado
+      FROM orden o
+      JOIN clientes c ON o.id_cliente = c.id_cliente
+      LEFT JOIN movimientos_caja m ON o.folio = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
+      WHERE DATE(o.fecha_emision) BETWEEN ? AND ?
+      GROUP BY o.folio
+      ORDER BY o.fecha_emision DESC
+    `;
+    const [resultados] = await pool.query(query, [fechaInicio, fechaFin]);
+    res.status(200).json({ exito: true, datos: resultados });
+  } catch (error) {
+    console.error("Error en obtenerReporteVentasCompleto:", error);
+    res.status(500).json({ exito: false, mensaje: "Error al generar reporte de ventas." });
+  }
+};
+
 module.exports = {
-  getReporteStockCritico,
-  getReporteProductividad,
-  getReporteIngresosCaja,
+  obtenerReporteStockCritico,
+  obtenerReporteProductividad,
+  obtenerReporteIngresosCaja,
   obtenerIngresosPorMetodo,
   obtenerAntiguedadSaldos,
   obtenerPacientesParaRecordatorio,
   obtenerInventarioLentoMovimiento,
   obtenerProductividadOperadores,
+  obtenerReporteDescuentos,
+  obtenerReporteVentasCompleto
 };
