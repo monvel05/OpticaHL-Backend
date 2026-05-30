@@ -211,4 +211,44 @@ const consultarArmazones = async (req, res) => {
     }
 };
 
-module.exports = { obtenerAlertasStock, actualizarStock, trasladarStock, activarArticuloSucursal, consultarArmazones };
+// ==========================================
+// OBTENER INVENTARIO GENERAL POR SUCURSAL
+// ==========================================
+const obtenerInventarioGeneral = async (req, res) => {
+    const { id_sucursal } = req.query;
+
+    if (!id_sucursal) {
+        return res.status(400).json({ 
+            success: false, 
+            message: "Falta especificar la sucursal (id_sucursal)." 
+        });
+    }
+
+    try {
+        const query = `
+            SELECT 
+                a.id_articulo, a.codigo, a.nombre, a.categoria, a.marca, 
+                a.color, a.material, a.precio_venta, a.costo,
+                inv.stock_actual, inv.stock_minimo, inv.ubicacion_estante
+            FROM ARTICULOS a
+            JOIN INVENTARIO_SUCURSAL inv ON a.id_articulo = inv.id_articulo
+            WHERE inv.id_sucursal = ? AND a.activo = 1
+        `;
+
+        const [articulos] = await pool.query(query, [id_sucursal]);
+        
+        // Mapeamos las categorías del backend a las mayúsculas que usa tu TS
+        const datosMapeados = articulos.map(art => ({
+            ...art,
+            categoria: art.categoria.toUpperCase() // Convierte 'Armazon' -> 'ARMAZON'
+        }));
+
+        res.status(200).json({ success: true, data: datosMapeados });
+    } catch (error) {
+        console.error('Error al obtener inventario general:', error);
+        res.status(500).json({ success: false, message: 'Error interno del servidor.' });
+    }
+};
+
+
+module.exports = { obtenerAlertasStock, actualizarStock, trasladarStock, activarArticuloSucursal, consultarArmazones, obtenerInventarioGeneral };
