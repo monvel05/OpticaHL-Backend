@@ -1,170 +1,105 @@
+// src/controllers/facturacion.controller.js
 const pool = require('../config/db');
-const axios = require('axios');
-const nodemailer = require('nodemailer');
+const pacService = require('../services/pac.service');
+const pdfService = require('../services/pdf.service');
+const correoService = require('../services/correo.service'); 
+const cfdiService = require('../services/cfdi.service');
 
-/**
- * Configuración del transportador de Nodemailer para enviar correos.
- * Nota: Asegúrate de tener EMAIL_USER y EMAIL_PASS en tu archivo .env
- */
-const transporter = nodemailer.createTransport({
-  service: 'gmail', 
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+const TASA_IVA = 0.16;
+const FACTOR_IVA = 1 + TASA_IVA;
 
-/**
- * @function timbrarFactura
- * @description Recopila datos de orden, conecta con Facte, guarda en la BD (tablas factura y cfdi_timbrado) y envía correo.
- */
 const timbrarFactura = async (req, res) => {
-  // Ahora recibimos datos comerciales y fiscales necesarios para CFDI 4.0
   const { 
-      folio_orden, id_sucursal, id_operador, metodo_pago, forma_pago, // Datos comerciales
-      uso_cfdi, regimen_fiscal // Datos fiscales
+      folio_orden, id_sucursal, id_operador, metodo_pago, forma_pago, 
+      uso_cfdi, regimen_fiscal, nombres_personalizados = []
   } = req.body;
   
   const connection = await pool.getConnection();
 
   try {
-    // 1. Obtener datos de la Orden y el Cliente
-    const [ordenRows] = await connection.query(
-      `SELECT o.folio, o.total, o.id_cliente, c.email, c.rfc, c.nombre_completo, c.cp, c.domicilio 
-       FROM orden o 
-       JOIN clientes c ON o.id_cliente = c.id_cliente 
-       WHERE o.folio = ?`, 
-      [folio_orden]
-    );
+    // OPTIMIZACIÓN: Ejecutamos ambas consultas en paralelo para ganar velocidad
+    const [ [ordenRows], [detalles] ] = await Promise.all([
+      connection.query(
+        `SELECT o.folio, o.total, o.id_cliente, c.email, c.rfc, c.nombre_completo, c.cp, c.domicilio 
+         FROM orden o JOIN clientes c ON o.id_cliente = c.id_cliente WHERE o.folio = ?`, 
+        [folio_orden]
+      ),
+      connection.query(
+        `SELECT d.id_articulo, d.cantidad, d.precio_unitario, a.nombre 
+         FROM detalle_venta d JOIN articulos a ON d.id_articulo = a.id_articulo WHERE d.folio_orden = ?`,
+        [folio_orden]
+      )
+    ]);
 
     if (ordenRows.length === 0) {
       return res.status(404).json({ exito: false, mensaje: 'No se encontró la orden especificada.' });
     }
     const orden = ordenRows[0];
 
-    // 2. Obtener los artículos de la orden desde detalle_venta
-    const [detalles] = await connection.query(
-      `SELECT d.id_articulo, d.cantidad, d.precio_unitario, a.nombre 
-       FROM detalle_venta d
-       JOIN articulos a ON d.id_articulo = a.id_articulo
-       WHERE d.folio_orden = ?`,
-      [folio_orden]
-    );
-
-    // 3. Cálculos fiscales (Desglosando IVA al 16%)
+    // Cálculos fiscales usando la constante
     const total = parseFloat(orden.total);
-    const subtotal = total / 1.16;
+    const subtotal = total / FACTOR_IVA;
     const iva_trasladado = total - subtotal;
-    const descuento = 0.00; // Asumiendo 0 por ahora, puedes ajustarlo a tu lógica
+    const descuento = 0.00; 
 
-    // Extraemos los nombres personalizados del body (si el contador los envía)
-    // Ejemplo de formato esperado: nombres_personalizados: [{ id_articulo: 1, nombre_factura: "Lente oftálmico genérico" }]
-    const nombres_personalizados = req.body.nombres_personalizados || [];
+    // Armar el JSON requerido por la API del PAC
+    const payloadFacte = cfdiService.construirPayloadFacte(orden, detalles, uso_cfdi, regimen_fiscal, nombres_personalizados);
 
-    // 4. Armar el JSON requerido por la API del PAC (Facte)
-    const payloadFacte = {
-      Receptor: {
-        Rfc: orden.rfc,
-        Nombre: orden.nombre_completo,
-        UsoCFDI: uso_cfdi,
-        DomicilioFiscalReceptor: orden.cp,
-        RegimenFiscalReceptor: regimen_fiscal
-      },
-      Conceptos: detalles.map(item => {
-        // Buscamos si el contador sobrescribió el nombre para este artículo
-        const nombreCustom = nombres_personalizados.find(n => n.id_articulo === item.id_articulo);
-        const descripcionFinal = nombreCustom ? nombreCustom.nombre_factura : item.nombre;
+    // Llamada a la API de Facte
+    const respuestaPAC = await pacService.timbrarComprobante(payloadFacte);
+    if (!respuestaPAC.exito) {
+      return res.status(400).json({
+        exito: false, mensaje: "El SAT/PAC rechazó la factura", detalle: respuestaPAC.mensaje
+      });
+    }
 
-        return {
-          ClaveProdServ: "42142902", // Clave genérica para lentes oftálmicos, puedes ajustar 
-          Cantidad: item.cantidad,
-          Descripcion: descripcionFinal, // Usamos el nombre modificado o el original
-          ValorUnitario: parseFloat(item.precio_unitario) / 1.16,
-          Importe: (parseFloat(item.precio_unitario) / 1.16) * item.cantidad
-        };
-      })
-    };
-
-    // 5. Llamada a la API de Facte (Axios)
-    /* // DESCOMENTAR CUANDO ESTE LA URL REAL DE FACTE
-    const respuestaFacte = await axios.post('URL_API_FACTE/timbrar', payloadFacte, {
-      headers: { 'Authorization': `Bearer ${process.env.FACTE_TOKEN}` }
-    });
-    const { uuid, xml_base64, pdf_url } = respuestaFacte.data; 
-    */
-    
-    // MOCK (Simulación de respuesta de Facte)
-    const uuid = `MOCK-UUID-${Date.now()}`;
-    const pdf_url = "https://miservidor.com/facturas/mock.pdf";
-    const xml_sat = "<cfdi:Comprobante>XML Simulado</cfdi:Comprobante>"; // MOCK del XML
-    
-    // Generamos un folio interno para tu control comercial
+    const { uuid, xml: xml_sat } = respuestaPAC; // Desestructuración limpia
     const num_factura = `FAC-${Date.now()}`; 
 
-    // 6. INICIAR TRANSACCIÓN EN BASE DE DATOS
+    // Preparamos los datos y generamos PDF
+    const datosParaPDF = {
+        uuid, 
+        cliente: { nombre: orden.nombre_completo, rfc: orden.rfc, uso_cfdi, regimen: regimen_fiscal },
+        conceptos: payloadFacte.Conceptos.map(c => ({
+            cantidad: c.Cantidad, descripcion: c.Descripcion,
+            precio_unitario: c.ValorUnitario.toFixed(2), importe: c.Importe.toFixed(2)
+        })),
+        totales: { subtotal: subtotal.toFixed(2), iva: iva_trasladado.toFixed(2), total: total.toFixed(2) }
+    };
+    const nombrePdf = `${num_factura}.pdf`;
+    const pdf_url = await pdfService.generarFacturaPDF(datosParaPDF, nombrePdf);
+
+    // INICIAR TRANSACCIÓN EN BASE DE DATOS
     await connection.beginTransaction();
 
-    // 6.1 Guardar en la tabla COMERCIAL (factura) - MER V2
     await connection.query(
-      `INSERT INTO factura (num_factura, folio_orden, fecha, subtotal, descuento, iva_trasladado, total, metodo_pago, forma_pago, estatus, id_sucursal, id_cliente, id_operador) 
-       VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO factura (num_factura, folio_orden, fecha, subtotal, descuento, iva_trasladado, total, metodo_pago, forma_pago, estatus, id_sucursal, id_cliente, id_operador) VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [num_factura, folio_orden, subtotal.toFixed(2), descuento, iva_trasladado.toFixed(2), total.toFixed(2), metodo_pago, forma_pago, 'VIGENTE', id_sucursal, orden.id_cliente, id_operador]
     );
 
-    // 6.2 Guardar en la tabla FISCAL (cfdi_timbrado) - MER V2
     await connection.query(
-      `INSERT INTO cfdi_timbrado (id_factura, uuid, rfc_receptor, razon_social_receptor, regimen_fiscal_receptor, cp_receptor, uso_cfdi, xml_sat, estatus_sat) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO cfdi_timbrado (id_factura, uuid, rfc_receptor, razon_social_receptor, regimen_fiscal_receptor, cp_receptor, uso_cfdi, xml_sat, estatus_sat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [num_factura, uuid, orden.rfc, orden.nombre_completo, regimen_fiscal, orden.cp, uso_cfdi, xml_sat, 'VIGENTE']
     );
 
-    // Confirmar transacción
     await connection.commit();
 
-    // 7. Enviar el correo al cliente (Nodemailer)
+    // Enviar el correo al cliente usando el nuevo servicio
     if (orden.email) {
-      await enviarFacturaPorCorreo(orden.email, orden.nombre_completo, uuid, pdf_url);
+      // Se ejecuta en background 
+      correoService.enviarFactura(orden.email, orden.nombre_completo, uuid, pdf_url); 
     }
 
     res.status(200).json({
-      exito: true,
-      mensaje: 'Factura timbrada y guardada correctamente.',
-      datos: { num_factura, uuid, pdf_url }
+      exito: true, mensaje: 'Factura timbrada y guardada correctamente.', datos: { num_factura, uuid, pdf_url }
     });
 
   } catch (error) {
-    // Si algo falla, revertimos los INSERT en MySQL
     await connection.rollback();
     console.error('Error al timbrar factura:', error);
     res.status(500).json({ exito: false, mensaje: error.message });
   } finally {
     connection.release();
-  }
-};
-
-/**
- * @function enviarFacturaPorCorreo
- * @description Envía el comprobante al paciente.
- */
-const enviarFacturaPorCorreo = async (emailDestino, nombreCliente, folioFiscal, linkPdf) => {
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: emailDestino,
-    subject: `Tu Factura Electrónica - Óptica HL (Folio: ${folioFiscal})`,
-    html: `
-      <h3>Hola ${nombreCliente},</h3>
-      <p>Adjuntamos tu comprobante fiscal digital correspondiente a tu compra en Óptica HL.</p>
-      <p>Folio Fiscal (UUID): <b>${folioFiscal}</b></p>
-      <p>Puedes descargar tu PDF aquí: <a href="${linkPdf}">Descargar Factura</a></p>
-      <p>Gracias por tu preferencia.</p>
-    `
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`Correo enviado a ${emailDestino}`);
-  } catch (error) {
-    console.error('Error enviando el correo de factura:', error);
   }
 };
 
