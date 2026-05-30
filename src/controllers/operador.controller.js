@@ -9,10 +9,11 @@ const bcrypt = require('bcrypt');
 // Obtener todos los operadores activos con sus roles
 const obtenerOperadores = async (req, res) => {
   try {
+    // 🏛️ Corregido: Se cambió "operador_rol" por "OPERADOR_ROLES"
     const query = `
       SELECT o.id_operador, o.cveope_historicos, o.nombre_completo, o.usuario_login, o.descripcion, o.activo, r.nombre_rol, r.id_rol
       FROM operadores o
-      LEFT JOIN operador_rol op_r ON o.id_operador = op_r.id_operador
+      LEFT JOIN OPERADOR_ROLES op_r ON o.id_operador = op_r.id_operador
       LEFT JOIN roles r ON op_r.id_rol = r.id_rol
       WHERE o.activo = 1
     `;
@@ -28,10 +29,11 @@ const obtenerOperadores = async (req, res) => {
 const obtenerOperadorPorId = async (req, res) => {
   const { id } = req.params;
   try {
+    // 🏛️ Corregido: Se cambió "operador_rol" por "OPERADOR_ROLES"
     const query = `
       SELECT o.id_operador, o.nombre_completo, o.usuario_login, o.descripcion, o.activo, r.id_rol, r.nombre_rol
       FROM operadores o
-      LEFT JOIN operador_rol op_r ON o.id_operador = op_r.id_operador
+      LEFT JOIN OPERADOR_ROLES op_r ON o.id_operador = op_r.id_operador
       LEFT JOIN roles r ON op_r.id_rol = r.id_rol
       WHERE o.id_operador = ?
     `;
@@ -73,8 +75,9 @@ const crearOperador = async (req, res) => {
 
     // 4. Asignar el rol en la tabla intermedia
     if (id_rol) {
+      // 🏛️ Corregido: Se cambió "operador_rol" por "OPERADOR_ROLES"
       await connection.query(
-        `INSERT INTO operador_rol (id_operador, id_rol) VALUES (?, ?)`,
+        `INSERT INTO OPERADOR_ROLES (id_operador, id_rol) VALUES (?, ?)`,
         [id_operador, id_rol]
       );
     }
@@ -107,8 +110,9 @@ const modificarOperador = async (req, res) => {
 
     // Actualizar rol (Se elimina el anterior y se inserta el nuevo)
     if (id_rol) {
-      await connection.query(`DELETE FROM operador_rol WHERE id_operador = ?`, [id]);
-      await connection.query(`INSERT INTO operador_rol (id_operador, id_rol) VALUES (?, ?)`, [id, id_rol]);
+      // 🏛️ Corregido: Se cambió "operador_rol" por "OPERADOR_ROLES" en DELETE e INSERT
+      await connection.query(`DELETE FROM OPERADOR_ROLES WHERE id_operador = ?`, [id]);
+      await connection.query(`INSERT INTO OPERADOR_ROLES (id_operador, id_rol) VALUES (?, ?)`, [id, id_rol]);
     }
 
     await connection.commit();
@@ -155,4 +159,11 @@ const desactivarOperador = async (req, res) => {
   }
 };
 
-module.exports = {obtenerOperadores, obtenerOperadorPorId, crearOperador, modificarOperador, cambiarPassword, desactivarOperador};
+module.exports = {
+  obtenerOperadores, 
+  obtenerOperadorPorId, 
+  crearOperador, 
+  modificarOperador, 
+  cambiarPassword, 
+  desactivarOperador
+};

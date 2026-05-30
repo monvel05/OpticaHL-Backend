@@ -81,8 +81,6 @@ const obtenerReporteIngresosCaja = async (req, res) => {
   }
 };
 
-const pool = require("../config/db");
-
 /**
  *  Reporte de Ingresos por Método de Pago (Corte de Caja)
  * @description Muestra cuánto dinero entró hoy (o en una fecha específica) desglosado por método de pago.
