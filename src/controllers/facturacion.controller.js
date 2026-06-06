@@ -145,14 +145,18 @@ const obtenerFacturasConFiltros = async (req, res) => {
 
 /**
  * @function cancelarFactura
- * @description Cancela el CFDI en el PAC y actualiza el estatus en la BD. Soporta motivos CFDI 4.0.
+ * @description Cancela el CFDI en el PAC, actualiza el estatus en la BD y registra en la bitácora fiscal.
  * @route PUT /api/facturacion/:num_factura/cancelar
  */
 const cancelarFactura = async (req, res) => {
   const { num_factura } = req.params;
-  // motivo: '01' (Con error con relación), '02' (Con error sin relación), '03' (No se llevó a cabo la operación)
-  // uuid_sustitucion: Requerido solo si el motivo es '01'
   const { motivo, uuid_sustitucion } = req.body; 
+
+  // Extraemos datos del middleware de autenticación (auth.middleware.js / auth.controller.js)
+  const id_operador = req.user.id_operador;
+  const id_sucursal = req.user.sucursal;
+
+  let uuidFiscal = 'DESCONOCIDO'; 
 
   const connection = await pool.getConnection();
 
@@ -170,11 +174,13 @@ const cancelarFactura = async (req, res) => {
     }
 
     const cfdi = cfdiRows[0];
+    uuidFiscal = cfdi.uuid;
+
     if (cfdi.estatus_sat === 'CANCELADO') {
       return res.status(400).json({ exito: false, mensaje: 'La factura ya se encuentra cancelada previamente.' });
     }
 
-    // 2. Llamada a la API de Facte para Cancelar (Axios)
+    // 2. Llamada a la API del PAC (Facte)
     /* // DESCOMENTAR CUANDO ESTE LA URL REAL DE FACTE
     const payloadCancelacion = {
       uuid: cfdi.uuid,
@@ -182,16 +188,18 @@ const cancelarFactura = async (req, res) => {
       folioSustitucion: motivo === '01' ? uuid_sustitucion : null
     };
     const respuestaFacte = await axios.post('URL_API_FACTE/cancelar', payloadCancelacion, {
-      headers: { 'Authorization': `Bearer ${process.env.FACTE_TOKEN}` }
+      headers: { 'Authorization': \`Bearer \${process.env.FACTE_TOKEN}\` }
     });
     
     if(!respuestaFacte.data.exito) {
         throw new Error('El SAT/PAC rechazó la cancelación: ' + respuestaFacte.data.mensaje);
     }
+    const acuse_pac = JSON.stringify(respuestaFacte.data);
     */
 
-    // MOCK: Simulación de respuesta exitosa de cancelación
+    // MOCK: Simulación de respuesta de cancelación
     const codigoRespuestaSat = `Cancelado (Motivo ${motivo})`;
+    const acuse_pac = JSON.stringify({ mensaje: "Cancelación exitosa simulada ante el SAT", acuse: "acuse_ficticio_123" });
 
     // 3.1 Actualizar tabla comercial (factura)
     await connection.query(
@@ -205,16 +213,39 @@ const cancelarFactura = async (req, res) => {
       [codigoRespuestaSat, num_factura]
     );
 
+    // 4. Escribir el ÉXITO en la bitácora fiscal
+    await connection.query(
+      `INSERT INTO bitacora_fiscal 
+      (id_factura, uuid, id_operador, id_sucursal, tipo_evento, motivo_cancelacion, estatus, respuesta_pac) 
+      VALUES (?, ?, ?, ?, 'CANCELACION', ?, 'EXITO', ?)`,
+      [num_factura, uuidFiscal, id_operador, id_sucursal, motivo, acuse_pac]
+    );
+
     await connection.commit();
 
     res.status(200).json({
       exito: true,
-      mensaje: `La factura ${num_factura} (UUID: ${cfdi.uuid}) fue cancelada correctamente.`
+      mensaje: `La factura ${num_factura} (UUID: ${uuidFiscal}) fue cancelada correctamente.`
     });
 
   } catch (error) {
+    // Si algo sale mal, hacemos rollback para no dejar la factura como cancelada en la BD
     await connection.rollback();
     console.error('Error al cancelar factura:', error);
+
+    // Registro de ERROR en la bitácora fiscal
+    // Usamos pool.query directo (fuera de la transacción de 'connection') para que este insert NO sufra el rollback
+    try {
+      await pool.query(
+        `INSERT INTO bitacora_fiscal 
+        (id_factura, uuid, id_operador, id_sucursal, tipo_evento, motivo_cancelacion, estatus, respuesta_pac) 
+        VALUES (?, ?, ?, ?, 'CANCELACION_FALLIDA', ?, 'ERROR', ?)`,
+        [num_factura, uuidFiscal, id_operador, id_sucursal, motivo, error.message]
+      );
+    } catch (logError) {
+      console.error("Error crítico al escribir en la bitácora:", logError);
+    }
+
     res.status(500).json({ exito: false, mensaje: error.message || 'Error interno al cancelar la factura.' });
   } finally {
     connection.release();
