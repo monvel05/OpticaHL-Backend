@@ -112,20 +112,8 @@ const trasladarStock = async (req, res) => {
                 INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo, ubicacion_estante) 
                 VALUES (?, ?, ?, 2, 'Por asignar')
             `;
-            await conexion.execute(queryInsertar, [id_articulo, id_sucursal_destino, cantidad]);
+            await conexion.execute(queryInsertar, [id_articulo, id_sucursal_destino, Math.max(0, cantidad)]);
         }
-
-        /*
-        NOTA: Si se agrega la tabla historial_movimientos para llevar un registro de estos traslados,
-         aquí se insertaría un nuevo registro con: 
-        - id_articulo
-        - id_sucursal_origen
-        - id_sucursal_destino
-        - cantidad
-        - id_operador (quién hizo el traslado)
-        - fecha_hora
-        Pa poder ver a quien culpar jsjs
-        **/
 
         await conexion.commit();
 
@@ -177,7 +165,7 @@ const activarArticuloSucursal = async (req, res) => {
 };
 
 // ==========================================
-// CONSULTA DE ARMAZONES 
+// CONSULTA DE ARMAZONES (FILTRO RÁPIDO)
 // ==========================================
 const consultarArmazones = async (req, res) => {
     const { id_sucursal } = req.query;
@@ -190,15 +178,15 @@ const consultarArmazones = async (req, res) => {
     }
 
     try {
-        // Trae: Código, nombre, color, marca y stock real
-        // Filtramos por categoria = 'Armazon'
         const query = `
-            SELECT a.codigo, a.nombre, a.color, a.marca, inv.stock_actual
+            SELECT a.codigo, a.nombre, det.color, det.marca, inv.stock_actual
             FROM articulos a
             JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo
-            WHERE a.categoria = 'Armazon' 
+            LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
+            WHERE (a.categoria = 'Armazon' OR a.categoria = 'Z') 
               AND inv.id_sucursal = ? 
               AND inv.stock_actual > 0
+              AND a.activo = 1
             LIMIT 50
         `; 
 
@@ -211,9 +199,9 @@ const consultarArmazones = async (req, res) => {
     }
 };
 
-// ==========================================
-// OBTENER INVENTARIO GENERAL POR SUCURSAL
-// ==========================================
+// =========================================================
+// OBTENER INVENTARIO GENERAL POR SUCURSAL (CON PARSEO LIMPIO Y LEFT JOIN)
+// =========================================================
 const obtenerInventarioGeneral = async (req, res) => {
     const { id_sucursal } = req.query;
 
@@ -225,23 +213,44 @@ const obtenerInventarioGeneral = async (req, res) => {
     }
 
     try {
+        // MODIFICADO: Usamos LEFT JOIN e IFNULL para que devuelva los productos aunque la tabla de existencias esté vacía
         const query = `
             SELECT 
-                a.id_articulo, a.codigo, a.nombre, a.categoria, a.marca, 
-                a.color, a.material, a.precio_venta, a.costo,
-                inv.stock_actual, inv.stock_minimo, inv.ubicacion_estante
-            FROM ARTICULOS a
-            JOIN INVENTARIO_SUCURSAL inv ON a.id_articulo = inv.id_articulo
-            WHERE inv.id_sucursal = ? AND a.activo = 1
+                a.id_articulo, 
+                a.codigo, 
+                a.nombre, 
+                a.categoria, 
+                a.precio_venta, 
+                a.costo,
+                IFNULL(inv.stock_actual, 0) AS stock_actual, 
+                IFNULL(inv.stock_minimo, 0) AS stock_minimo, 
+                IFNULL(inv.ubicacion_estante, 'Por asignar') AS ubicacion_estante,
+                det.marca, 
+                det.color, 
+                det.material, 
+                det.estilo
+            FROM articulos a
+            LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo AND inv.id_sucursal = ?
+            LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
+            WHERE a.activo = 1
         `;
 
         const [articulos] = await pool.query(query, [id_sucursal]);
         
-        // Mapeamos las categorías del backend a las mayúsculas que usa tu TS
-        const datosMapeados = articulos.map(art => ({
-            ...art,
-            categoria: art.categoria.toUpperCase() // Convierte 'Armazon' -> 'ARMAZON'
-        }));
+        // Mapeamos los datos garantizando limpieza de nulos y compatibilidad directa de mayúsculas
+        const datosMapeados = articulos.map(art => {
+            let catLimpia = art.categoria ? art.categoria.toUpperCase().trim() : 'Z';
+            
+            return {
+                ...art,
+                categoria: catLimpia,
+                precio_venta: Number(art.precio_venta) || 0,
+                costo: Number(art.costo) || 0,
+                marca: art.marca || 'Sin Marca',
+                color: art.color || 'N/A',
+                material: art.material || 'N/A'
+            };
+        });
 
         res.status(200).json({ success: true, data: datosMapeados });
     } catch (error) {
@@ -250,5 +259,11 @@ const obtenerInventarioGeneral = async (req, res) => {
     }
 };
 
-
-module.exports = { obtenerAlertasStock, actualizarStock, trasladarStock, activarArticuloSucursal, consultarArmazones, obtenerInventarioGeneral };
+module.exports = { 
+    obtenerAlertasStock, 
+    actualizarStock, 
+    trasladarStock, 
+    activarArticuloSucursal, 
+    consultarArmazones, 
+    obtenerInventarioGeneral 
+};
