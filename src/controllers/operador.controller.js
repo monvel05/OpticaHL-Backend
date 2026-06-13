@@ -75,7 +75,6 @@ const crearOperador = async (req, res) => {
 
     // 4. Asignar el rol en la tabla intermedia
     if (id_rol) {
-      // 🏛️ Corregido: Se cambió "operador_rol" por "OPERADOR_ROLES"
       await connection.query(
         `INSERT INTO OPERADOR_ROLES (id_operador, id_rol) VALUES (?, ?)`,
         [id_operador, id_rol]
