@@ -1,11 +1,21 @@
 const checkRole = (rolesPermitidos) => {
     return (req, res, next) => {
-        const userRoles = req.user.roles; 
+        // req.user debe ser inyectado previamente por el middleware de autenticación (auth.middleware)
+        if (!req.user || !req.user.rol) {
+            return res.status(401).json({ 
+                ok: false, 
+                msg: 'No autenticado o token no válido' 
+            });
+        }
 
-        const tienePermiso = userRoles.some(rol => rolesPermitidos.includes(rol));
+        const rolUsuario = req.user.rol;
 
-        if (!tienePermiso) {
-            return res.status(403).json({ message: "Acceso denegado. No tienes los permisos necesarios para esta acción." });
+        // Verificar si el rol del usuario está dentro de los permitidos
+        if (!rolesPermitidos.includes(rolUsuario)) {
+            return res.status(403).json({ 
+                ok: false, 
+                msg: `Acceso denegado. Se requiere uno de los siguientes roles: ${rolesPermitidos.join(', ')}` 
+            });
         }
 
         next();

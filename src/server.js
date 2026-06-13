@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const auditLogger = require('./middlewares/audit.middleware'); // Middleware de auditoría
 require('dotenv').config();
 require('./services/recordatorio.service'); // Importamos el servicio de recordatorios para que se ejecute el cron 
 
@@ -21,6 +22,7 @@ const app = express();
 // Middlewares globales
 app.use(cors());
 app.use(express.json());
+app.use(auditLogger); 
 
 // Ruta de prueba
 app.get('/api/health', (req, res) => {
