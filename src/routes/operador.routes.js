@@ -3,11 +3,11 @@ const router = express.Router();
 const operadorController = require('../controllers/operador.controller');
 const { check, validationResult } = require('express-validator');
 
-// Importamos los middlewares con destructuración
-const {verifyToken} = require('../middlewares/auth.middleware');
-const {checkRole} = require('../middlewares/rol.middleware');
+// 🔐 Importamos tus middlewares reales con destructuración
+const { verifyToken } = require('../middlewares/auth.middleware');
+const { checkRole } = require('../middlewares/rol.middleware');
 
-// Middleware para atrapar los errores de validación
+// 🔎 Middleware para atrapar los errores de express-validator
 const validarCampos = (req, res, next) => {
     const errores = validationResult(req);
     if (!errores.isEmpty()) {
@@ -16,30 +16,46 @@ const validarCampos = (req, res, next) => {
     next();
 };
 
+// ==========================================
+// 🛡️ SEGURIDAD GLOBAL PARA ESTE MÓDULO
+// ==========================================
 
-// Protegemos todas las rutas de este módulo exigiendo un JWT válido
-//router.use(verifyToken);
+// Descomenta estas dos líneas de abajo si quieres que todo el módulo de operadores 
+// esté protegido y sea exclusivo para el ADMINISTRADOR:
+// router.use(verifyToken);
+// router.use(checkRole(['ADMINISTRADOR']));
 
-// Solo ADMINISTRADOR puede gestionar operadores (Verificar políticas de la empresa si otro rol debe tener acceso)
-//router.use(checkRole(['ADMINISTRADOR']));
+// ==========================================
+// 👥 RUTAS DEL MÓDULO OPERADORES
+// ==========================================
 
-// Rutas
+// 1. Registrar un nuevo operador (Mantiene las validaciones de tu compañera)
 router.post('/', 
     [
-        authMiddleware,
-        verificarRol(['Administrador']),
-        check('nombre', 'El nombre es obligatorio y debe ser texto').not().isEmpty().trim().escape(),
-        check('correo', 'Debe ser un correo válido').isEmail().normalizeEmail(),
+        verifyToken,                       // 👈 CORREGIDO: Tu middleware real
+        checkRole(['ADMINISTRADOR']),      // 👈 CORREGIDO: Tu middleware real en MAYÚSCULAS
+        check('nombre_completo', 'El nombre es obligatorio y debe ser texto').not().isEmpty().trim().escape(),
+        check('usuario_login', 'El nombre de usuario es obligatorio').not().isEmpty().trim(),
         check('password', 'La contraseña debe tener al menos 6 caracteres').isLength({ min: 6 }),
-        check('rol', 'El rol no es válido').isIn(['Administrador', 'Vendedor', 'Cajero', 'Contador', 'Inventario', 'Optometrista']),
         validarCampos 
     ], 
     operadorController.crearOperador
 );
-router.get('/', operadorController.obtenerOperadores);
-router.get('/:id', operadorController.obtenerOperadorPorId);
-router.put('/:id', operadorController.modificarOperador);
-router.patch('/:id/password', operadorController.cambiarPassword);
-router.put('/:id/desactivar', operadorController.desactivarOperador); // Soft delete
+
+// 2. Obtener la lista de operadores activos
+router.get('/', verifyToken, operadorController.obtenerOperadores);
+
+// 3. Obtener un operador específico por su ID
+router.get('/:id', verifyToken, operadorController.obtenerOperadorPorId);
+
+// 4. Modificar datos generales de un operador
+router.put('/:id', verifyToken, operadorController.modificarOperador);
+
+// 5. Cambiar contraseña de un operador
+router.patch('/:id/password', verifyToken, operadorController.cambiarPassword);
+
+// 6. Dar de baja (Soft Delete) a un operador
+router.put('/:id/desactivar', verifyToken, operadorController.desactivarOperador); 
+
 
 module.exports = router;

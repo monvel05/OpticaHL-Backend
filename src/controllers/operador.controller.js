@@ -1,5 +1,5 @@
-const pool = require('../config/db');
-const bcrypt = require('bcrypt');
+const pool = require('../config/db'); // 👈 Importación del pool de conexiones a la base de datos
+const bcrypt = require('bcrypt');     // 👈 Importación de bcrypt para seguridad de contraseñas
 
 /**
  * @module OperadorController
@@ -9,7 +9,6 @@ const bcrypt = require('bcrypt');
 // Obtener todos los operadores activos con sus roles
 const obtenerOperadores = async (req, res) => {
   try {
-    // 🏛️ Corregido: Se cambió "operador_rol" por "OPERADOR_ROLES"
     const query = `
       SELECT o.id_operador, o.cveope_historicos, o.nombre_completo, o.usuario_login, o.descripcion, o.activo, r.nombre_rol, r.id_rol
       FROM operadores o
@@ -29,7 +28,6 @@ const obtenerOperadores = async (req, res) => {
 const obtenerOperadorPorId = async (req, res) => {
   const { id } = req.params;
   try {
-    // 🏛️ Corregido: Se cambió "operador_rol" por "OPERADOR_ROLES"
     const query = `
       SELECT o.id_operador, o.nombre_completo, o.usuario_login, o.descripcion, o.activo, r.id_rol, r.nombre_rol
       FROM operadores o
@@ -109,7 +107,6 @@ const modificarOperador = async (req, res) => {
 
     // Actualizar rol (Se elimina el anterior y se inserta el nuevo)
     if (id_rol) {
-      // 🏛️ Corregido: Se cambió "operador_rol" por "OPERADOR_ROLES" en DELETE e INSERT
       await connection.query(`DELETE FROM OPERADOR_ROLES WHERE id_operador = ?`, [id]);
       await connection.query(`INSERT INTO OPERADOR_ROLES (id_operador, id_rol) VALUES (?, ?)`, [id, id_rol]);
     }
