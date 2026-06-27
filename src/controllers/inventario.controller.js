@@ -201,10 +201,11 @@ const consultarArmazones = async (req, res) => {
 };
 
 // =========================================================
-// OBTENER INVENTARIO GENERAL POR SUCURSAL (CON PARSEO LIMPIO, LEFT JOIN Y PAGINACIÓN)
+// OBTENER INVENTARIO GENERAL POR SUCURSAL (AHORA FILTRA POR CATEGORÍA EN BD)
 // =========================================================
 const obtenerInventarioGeneral = async (req, res) => {
-    const { id_sucursal } = req.query;
+    // 1. Recibimos la nueva variable 'categoria' desde Angular
+    const { id_sucursal, categoria } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50; 
     const offset = (page - 1) * limit;
@@ -214,7 +215,7 @@ const obtenerInventarioGeneral = async (req, res) => {
     }
 
     try {
-        const query = `
+        let query = `
             SELECT 
                 a.id_articulo, a.codigo, a.nombre, a.categoria, a.precio_venta, a.costo,
                 IFNULL(inv.stock_actual, 0) AS stock_actual, 
@@ -225,11 +226,27 @@ const obtenerInventarioGeneral = async (req, res) => {
             LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo AND inv.id_sucursal = ?
             LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
             WHERE a.activo = 1
-            ORDER BY a.id_articulo DESC
-            LIMIT ? OFFSET ?
         `;
+        
+        const queryParams = [id_sucursal];
 
-        const [articulos] = await pool.query(query, [id_sucursal, limit, offset]);
+        // 2. FILTRO MÁGICO EN SQL ANTES DEL LÍMITE
+        if (categoria && categoria !== 'sucursales') {
+            if (categoria === 'Z') {
+                query += ` AND (a.categoria = 'Z' OR UPPER(a.categoria) LIKE '%ARMAZON%')`;
+            } else if (categoria === 'S') {
+                query += ` AND (a.categoria = 'S' OR UPPER(a.categoria) LIKE '%MICA%' OR UPPER(a.categoria) LIKE '%CRISTAL%' OR UPPER(a.categoria) LIKE '%LENTE%')`;
+            } else if (categoria === 'A') {
+                query += ` AND (a.categoria = 'A' OR UPPER(a.categoria) LIKE '%ACCESORIO%')`;
+            } else if (categoria === 'SERVICIO') {
+                query += ` AND (a.categoria = 'SERVICIO' OR UPPER(a.categoria) LIKE '%SERVICIO%')`;
+            }
+        }
+
+        query += ` ORDER BY a.id_articulo DESC LIMIT ? OFFSET ?`;
+        queryParams.push(limit, offset);
+
+        const [articulos] = await pool.query(query, queryParams);
         
         const datosMapeados = articulos.map(art => {
             let catLimpia = art.categoria ? art.categoria.toUpperCase().trim() : 'Z';
