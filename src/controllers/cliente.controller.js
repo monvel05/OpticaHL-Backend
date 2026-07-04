@@ -55,9 +55,35 @@ const obtenerHistorial = async (req, res) => {
     }
 };
 
-// Búsqueda rápida para el mostrador
+// Obtener clientes con paginacion
+const obtenerClientes = async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+
+    try {
+        const query = `
+            SELECT id_cliente, nombre_completo, telefono, email, rfc 
+            FROM clientes 
+            ORDER BY id_cliente DESC 
+            LIMIT ? OFFSET ?`;
+            
+        // NOTA: Es importante asegurar que limit y offset pasen como números
+        const [clientes] = await pool.query(query, [limit, offset]);
+        
+        res.json({ success: true, data: clientes });
+    } catch (error) {
+        console.error("Error al obtener clientes:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
+};
+
+// Buscar clientes con paginacion
 const buscarClientes = async (req, res) => {
     const { q } = req.query; 
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
     
     if (!q) {
         return res.status(400).json({ error: "Debes proporcionar un término de búsqueda." });
@@ -68,11 +94,13 @@ const buscarClientes = async (req, res) => {
             SELECT id_cliente, nombre_completo, telefono, email 
             FROM clientes 
             WHERE nombre_completo LIKE ? OR telefono LIKE ?
-            LIMIT 20`;
+            ORDER BY nombre_completo ASC
+            LIMIT ? OFFSET ?`;
+            
         const searchTerm = `%${q}%`;
-        const [clientes] = await pool.query(query, [searchTerm, searchTerm]);
+        const [clientes] = await pool.query(query, [searchTerm, searchTerm, limit, offset]);
         
-        res.json(clientes);
+        res.json({ success: true, data: clientes });
     } catch (error) {
         console.error("Error en búsqueda:", error);
         res.status(500).json({ error: "Error interno del servidor" });
@@ -170,4 +198,4 @@ const actualizarRX = async (req, res) => {
 
 // Recuerda agregar 'actualizarRX' al module.exports que tienes abajo
 
-module.exports = { crearCliente, obtenerHistorial, buscarClientes, guardarNuevaRX,actualizarRX };
+module.exports = { crearCliente, obtenerHistorial, obtenerClientes, buscarClientes, guardarNuevaRX, actualizarRX };

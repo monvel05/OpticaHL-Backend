@@ -169,12 +169,12 @@ const activarArticuloSucursal = async (req, res) => {
 // ==========================================
 const consultarArmazones = async (req, res) => {
     const { id_sucursal } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50; // Traemos de 50 en 50 por defecto
+    const offset = (page - 1) * limit;
 
     if (!id_sucursal) {
-        return res.status(400).json({ 
-            success: false, 
-            message: "Falta especificar la sucursal (id_sucursal)." 
-        });
+        return res.status(400).json({ success: false, message: "Falta especificar la sucursal." });
     }
 
     try {
@@ -187,60 +187,69 @@ const consultarArmazones = async (req, res) => {
               AND inv.id_sucursal = ? 
               AND inv.stock_actual > 0
               AND a.activo = 1
-            LIMIT 50
+            ORDER BY a.nombre ASC
+            LIMIT ? OFFSET ?
         `; 
 
-        const [armazones] = await pool.query(query, [id_sucursal]);
+        const [armazones] = await pool.query(query, [id_sucursal, limit, offset]);
         
         res.status(200).json({ success: true, data: armazones });
     } catch (error) {
-        console.error('Error al consultar inventario rápido:', error);
+        console.error('Error al consultar armazones:', error);
         res.status(500).json({ success: false, message: 'Error interno del servidor.' });
     }
 };
 
 // =========================================================
-// OBTENER INVENTARIO GENERAL POR SUCURSAL (CON PARSEO LIMPIO Y LEFT JOIN)
+// OBTENER INVENTARIO GENERAL POR SUCURSAL (AHORA FILTRA POR CATEGORÍA EN BD)
 // =========================================================
 const obtenerInventarioGeneral = async (req, res) => {
-    const { id_sucursal } = req.query;
+    // 1. Recibimos la nueva variable 'categoria' desde Angular
+    const { id_sucursal, categoria } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50; 
+    const offset = (page - 1) * limit;
 
     if (!id_sucursal) {
-        return res.status(400).json({ 
-            success: false, 
-            message: "Falta especificar la sucursal (id_sucursal)." 
-        });
+        return res.status(400).json({ success: false, message: "Falta especificar la sucursal." });
     }
 
     try {
-        // MODIFICADO: Usamos LEFT JOIN e IFNULL para que devuelva los productos aunque la tabla de existencias esté vacía
-        const query = `
+        let query = `
             SELECT 
-                a.id_articulo, 
-                a.codigo, 
-                a.nombre, 
-                a.categoria, 
-                a.precio_venta, 
-                a.costo,
+                a.id_articulo, a.codigo, a.nombre, a.categoria, a.precio_venta, a.costo,
                 IFNULL(inv.stock_actual, 0) AS stock_actual, 
                 IFNULL(inv.stock_minimo, 0) AS stock_minimo, 
                 IFNULL(inv.ubicacion_estante, 'Por asignar') AS ubicacion_estante,
-                det.marca, 
-                det.color, 
-                det.material, 
-                det.estilo
+                det.marca, det.color, det.material, det.estilo
             FROM articulos a
             LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo AND inv.id_sucursal = ?
             LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
             WHERE a.activo = 1
         `;
-
-        const [articulos] = await pool.query(query, [id_sucursal]);
         
-        // Mapeamos los datos garantizando limpieza de nulos y compatibilidad directa de mayúsculas
+        const queryParams = [id_sucursal];
+
+        // 2. FILTRO MÁGICO EN SQL ANTES DEL LÍMITE
+        if (categoria && categoria !== 'sucursales') {
+            if (categoria === 'Z') {
+                query += ` AND (a.categoria = 'Z' OR UPPER(a.categoria) LIKE '%ARMAZON%')`;
+            } else if (categoria === 'S') {
+                query += ` AND (a.categoria = 'S' OR UPPER(a.categoria) LIKE '%MICA%' OR UPPER(a.categoria) LIKE '%CRISTAL%' OR UPPER(a.categoria) LIKE '%LENTE%')`;
+            } else if (categoria === 'A') {
+                query += ` AND (a.categoria = 'A' OR UPPER(a.categoria) LIKE '%ACCESORIO%')`;
+            } else if (categoria === 'SERVICIO') {
+                query += ` AND (a.categoria = 'SERVICIO' OR UPPER(a.categoria) LIKE '%SERVICIO%')`;
+            }
+        }
+
+        query += ` ORDER BY a.id_articulo DESC LIMIT ? OFFSET ?`;
+        queryParams.push(limit, offset);
+
+        const [articulos] = await pool.query(query, queryParams);
+        
         const datosMapeados = articulos.map(art => {
             let catLimpia = art.categoria ? art.categoria.toUpperCase().trim() : 'Z';
-            
             return {
                 ...art,
                 categoria: catLimpia,
