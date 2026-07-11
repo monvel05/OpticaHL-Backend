@@ -40,32 +40,29 @@ const obtenerAlertasStock = async (req, res) => {
 // ACTUALIZAR STOCK (Entradas o Ajustes)
 // ==========================================
 const actualizarStock = async (req, res) => {
-    const { id_articulo } = req.params;
-    const { id_sucursal, cantidad_ajuste } = req.body; 
-    // cantidad_ajuste será +1 (incrementar) o -1 (decrementar)
+    const { id_articulo, id_sucursal } = req.params;
+    const { nuevo_stock } = req.body; 
 
     try {
-        // Actualizamos directamente sumando la cantidad_ajuste al stock_actual
         const query = `
             UPDATE INVENTARIO_SUCURSAL 
-            SET stock_actual = stock_actual + ? 
+            SET stock_actual = ? 
             WHERE id_articulo = ? AND id_sucursal = ?
         `;
         
-        const [result] = await pool.execute(query, [cantidad_ajuste, id_articulo, id_sucursal]);
+        const [result] = await pool.execute(query, [nuevo_stock, id_articulo, id_sucursal]);
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({ success: false, message: 'Inventario no encontrado para esta sucursal.' });
+            return res.status(404).json({ 
+                success: false, 
+                message: 'No se encontró registro de inventario para este artículo en esta sucursal.' 
+            });
         }
 
-        res.status(200).json({
-            success: true,
-            message: 'Stock actualizado correctamente.'
-        });
-
+        res.status(200).json({ success: true, message: 'Stock actualizado correctamente.' });
     } catch (error) {
         console.error('Error al actualizar stock:', error);
-        res.status(500).json({ success: false, message: 'Error interno al actualizar inventario.' });
+        res.status(500).json({ success: false, message: 'Error interno al actualizar el inventario.' });
     }
 };
 
