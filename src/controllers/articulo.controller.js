@@ -1,15 +1,15 @@
-// src/controllers/articulos.controller.js
+// src/controllers/articulo.controller.js
 const pool = require('../config/db');
 
 // ==========================================
 // CREATE: Crear un nuevo artículo (Transacción)
 // ==========================================
 const crearArticulo = async (req, res) => {
-    const { 
-        codigo, nombre, categoria, id_proveedor, costo, precio_venta, 
+    const {
+        codigo, nombre, categoria, id_proveedor, costo, precio_venta,
         marca, color, material, estilo, puente, diagonal, base, // Detalles del armazón/lente
         id_sucursal, stock_inicial, stock_minimo, ubicacion, // Datos de inventario
-        creado_por 
+        creado_por
     } = req.body;
 
     const conexion = await pool.getConnection();
@@ -28,7 +28,7 @@ const crearArticulo = async (req, res) => {
         const idNuevoArticulo = resultArticulo.insertId;
 
         // Si es un SERVICIO, nos saltamos los detalles y el inventario
-        if (categoria !== 'SERVICIO') { 
+        if (categoria !== 'SERVICIO') {
 
             // Insertar en ARTICULO_DETALLE
             const queryDetalle = `
@@ -60,7 +60,7 @@ const crearArticulo = async (req, res) => {
     } catch (error) {
         await conexion.rollback();
         console.error('Error en la transacción de creación:', error);
-        
+
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(400).json({ success: false, message: 'El código ya existe.' });
         }
@@ -72,10 +72,23 @@ const crearArticulo = async (req, res) => {
 };
 
 // ==========================================
-// READ: Obtener artículos activos (con sus detalles e inventario)
+// READ: Obtener artículos activos (PAGINADO)
 // ==========================================
 const obtenerArticulos = async (req, res) => {
+    // 1. Recogemos las variables de paginación y forzamos su conversión a números enteros
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 20;
+    const q = req.query.q || '';
     const { id_sucursal } = req.query;
+
+    // Calculamos el punto de inicio numérico para MySQL
+    const offset = (page - 1) * limit;
+
+    console.log("\n====================================================");
+    console.log("👉 ¡MÉTODO obtenerArticulos SE EJECUTÓ CORRECTAMENTE!");
+    console.log("Variables URL recibidas en req.query:", req.query);
+    console.log(`Parámetros Calculados -> LIMIT: ${limit} | OFFSET: ${offset} | BÚSQUEDA: "${q}"`);
+    console.log("====================================================\n");
 
     try {
         let query = `
@@ -99,15 +112,30 @@ const obtenerArticulos = async (req, res) => {
             queryParams.push(id_sucursal);
         }
 
-        const [articulos] = await pool.query(query, queryParams);
+        // Filtro de búsqueda dinámica
+        if (q.trim() !== '') {
+            query += ` AND (a.nombre LIKE ? OR a.codigo LIKE ? OR a.id_articulo LIKE ?)`;
+            queryParams.push(`%${q.trim()}%`, `%${q.trim()}%`, `%${q.trim()}%`);
+        }
 
+        // Orden y Límites estrictos
+        query += ` ORDER BY a.nombre ASC LIMIT ? OFFSET ?`;
+
+        // Forzamos que se inyecten como números primitivos puros
+        queryParams.push(Number(limit), Number(offset));
+
+
+        const [articulos] = await pool.query(query, queryParams);
+        console.log(`📊 Total de registros devueltos por la BD en esta página: ${articulos.length}`);
+
+        // Devolvemos la respuesta respetando el formato exacto { success: true, data: [...] }
         res.status(200).json({
             success: true,
             data: articulos
         });
 
     } catch (error) {
-        console.error('Error al obtener artículos:', error);
+        console.error('❌ Error crítico al obtener artículos en la consulta base:', error);
         res.status(500).json({ success: false, message: 'Error al consultar los artículos.' });
     }
 };
@@ -117,8 +145,8 @@ const obtenerArticulos = async (req, res) => {
 // ==========================================
 const actualizarArticulo = async (req, res) => {
     const { id_articulo } = req.params;
-    const { 
-        nombre, categoria, costo, precio_venta, 
+    const {
+        nombre, categoria, costo, precio_venta,
         marca, color, material, estilo, puente, diagonal, base
     } = req.body;
 
@@ -134,7 +162,7 @@ const actualizarArticulo = async (req, res) => {
         `;
         await conexion.execute(queryArticulo, [nombre, categoria, costo, precio_venta, id_articulo]);
 
-        // Evitamos actualizar detalle si es un SERVICIO (porque no existe en la tabla)
+        // Evitamos actualizar detalle si es un SERVICIO
         if (categoria !== 'SERVICIO') {
             const queryDetalle = `
                 UPDATE ARTICULO_DETALLE 
@@ -167,8 +195,6 @@ const desactivarArticulo = async (req, res) => {
     const { id_articulo } = req.params;
 
     try {
-        // En lugar de hacer DELETE, cambiamos activo a 0 para no batallar tanto con el 
-        // historial de ventas y movimientos relacionados al artículo.
         const query = 'UPDATE ARTICULOS SET activo = 0 WHERE id_articulo = ?';
         const [result] = await pool.execute(query, [id_articulo]);
 
