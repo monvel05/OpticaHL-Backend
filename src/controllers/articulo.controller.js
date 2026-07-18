@@ -1,4 +1,4 @@
-// src/controllers/articulos.controller.js
+// src/controllers/articulo.controller.js
 const pool = require("../config/db");
 
 // ==========================================
@@ -23,6 +23,7 @@ const crearArticulo = async (req, res) => {
     id_sucursal,
     stock_inicial,
     stock_minimo,
+    ubicacion,
     creado_por,
   } = req.body;
 
@@ -66,8 +67,8 @@ const crearArticulo = async (req, res) => {
     ]);
     const idNuevoArticulo = resultArticulo.insertId;
 
-    if (safeCategoria !== "SERVICIO") {
-      const queryDetalle = `
+        // Si es un SERVICIO, nos saltamos los detalles y el inventario
+        if (safeCategoria !== "SERVICIO") {
                 INSERT INTO ARTICULO_DETALLE (id_articulo, marca, color, material, estilo, puente, diagonal, base)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `;
@@ -120,16 +121,17 @@ const crearArticulo = async (req, res) => {
 };
 
 // ==========================================
-// READ: Obtener artículos (Paginados y Filtrados por pestaña)
-// ==========================================
-const obtenerArticulos = async (req, res) => {
-  // Recibimos los parámetros que nos manda inventario.service.ts
-  const { sucursal = "HL01", categoria, page = 1, limit = 50 } = req.query;
-  const offset = (Number(page) - 1) * Number(limit);
+    // 1. Recogemos las variables de paginación y forzamos su conversión a números enteros
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const q = req.query.q || '';
+    // permitimos recibir 'sucursal' o 'id_sucursal' desde el frontend
+    const sucursal = req.query.sucursal || req.query.id_sucursal || "HL01";
 
-  try {
-    // Pedimos TODOS los datos necesarios, incluyendo 'a.categoria' para los íconos del UI
-    let query = `
+    // Calculamos el punto de inicio numérico para MySQL
+    const offset = (page - 1) * limit;
+
+    console.log(`obtenerArticulos -> LIMIT: ${limit} | OFFSET: ${offset} | BÚSQUEDA: "${q}"`);
             SELECT 
                 a.id_articulo, a.codigo, a.nombre, a.categoria, a.precio_venta, a.costo,
                 d.marca, d.color, d.material, d.estilo,
@@ -142,11 +144,28 @@ const obtenerArticulos = async (req, res) => {
         `;
     const params = [sucursal];
 
+    const params = [sucursal];
+
     // 🎯 AQUÍ ESTÁ LA MAGIA DE LAS PESTAÑAS
     // Si el frontend mandó una categoría ('Z', 'S', 'A', 'SERVICIO'), la filtramos
     if (categoria && categoria !== "sucursales" && categoria !== "undefined") {
       query += ` AND a.categoria = ?`;
       params.push(categoria);
+    }
+
+    // Si se envía id_sucursal explícito, filtramos por él (permite búsquedas a otras sucursales)
+    if (req.query.id_sucursal) {
+      query += ` AND inv.id_sucursal = ?`;
+      params.push(req.query.id_sucursal);
+    }
+
+    // Filtro de búsqueda dinámica (q)
+    if (q && q.trim() !== '') {
+      query += ` AND (a.nombre LIKE ? OR a.codigo LIKE ? OR a.id_articulo LIKE ?)`;
+      params.push(`%${q.trim()}%`, `%${q.trim()}%`, `%${q.trim()}%`);
+    }
+
+    // La paginación (LIMIT/OFFSET) se agrega después de todos los filtros
     }
 
     // Agregamos la paginación al final de la consulta
@@ -170,6 +189,10 @@ const obtenerArticulos = async (req, res) => {
 // ==========================================
 const actualizarArticulo = async (req, res) => {
   const { id_articulo } = req.params;
+  const {
+    nombre, categoria, costo, precio_venta,
+    marca, color, material, estilo, puente, diagonal, base
+  } = req.body;
 
   // Extraemos "style" y "estilo" por si viene de una u otra forma
   const {
