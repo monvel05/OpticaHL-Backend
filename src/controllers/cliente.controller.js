@@ -1,4 +1,4 @@
-const pool = require('../config/db'); // Cambiado a pool
+const pool = require('../config/db');
 
 // Alta de Cliente
 const crearCliente = async (req, res) => {
@@ -13,8 +13,7 @@ const crearCliente = async (req, res) => {
     }
 
     try {
-        // 🎯 CORREGIDO: Se quitó la duplicación de columnas que tenías aquí
-        const query = `INSERT INTO CLIENTES 
+        const query = `INSERT INTO clientes 
             (nombre_completo, rfc, telefono, email, domicilio, colonia, cp, localidad, estado, creado_por) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
         
@@ -35,15 +34,15 @@ const obtenerHistorial = async (req, res) => {
     const clienteId = req.params.id;
 
     try {
-        // 🎯 ACTUALIZADO: Ahora recupera todos los campos separados de la nueva estructura
+        // 🎯 CORREGIDO: Cambiado 'o.folio' por 'o.folio_orden' para la nueva BD
         const query = `
             SELECT 
-                o.folio, o.fecha_emision,
+                o.folio_orden AS folio, o.fecha_emision,
                 g.od_esfera, g.od_cilindro, g.od_eje, g.od_adicion,
                 g.oi_esfera, g.oi_cilindro, g.oi_eje, g.oi_adicion,
                 g.distancia_pupilar, g.observaciones
             FROM orden o
-            JOIN graduacion_orden g ON o.folio = g.folio_orden
+            JOIN graduacion_orden g ON o.folio_orden = g.folio_orden
             WHERE o.id_cliente = ?
             ORDER BY o.fecha_emision DESC`;
 
@@ -68,9 +67,7 @@ const obtenerClientes = async (req, res) => {
             ORDER BY id_cliente DESC 
             LIMIT ? OFFSET ?`;
             
-        // NOTA: Es importante asegurar que limit y offset pasen como números
         const [clientes] = await pool.query(query, [limit, offset]);
-        
         res.json({ success: true, data: clientes });
     } catch (error) {
         console.error("Error al obtener clientes:", error);
@@ -110,32 +107,33 @@ const buscarClientes = async (req, res) => {
 // Guardar nueva receta (Manejo de Transacción con la Nueva Estructura)
 const guardarNuevaRX = async (req, res) => {
     const clienteId = req.params.id;
-    const id_operador = req.user.id; 
+    const id_operador = req.user?.id || req.usuario?.id || 1; // Respaldo si cambia la propiedad de sesión
     
-    // 🎯 ACTUALIZADO: Desestructuramos los campos separados que enviará el frontend
     const { 
         od_esfera, od_cilindro, od_eje, od_adicion, 
         oi_esfera, oi_cilindro, oi_eje, oi_adicion, 
-        distancia_pupilar, observaciones 
+        distancia_pupilar, observaciones,
+        id_sucursal // Si el front lo manda lo tomamos, si no ponemos por defecto la matriz HL01
     } = req.body;
+
+    const sucursalActiva = id_sucursal || 'HL01';
 
     const connection = await pool.getConnection();
 
     try {
         await connection.beginTransaction();
 
-        // Conservamos tu generador de folio corto
         const tiempoCorto = String(Date.now()).slice(-5);
         const folio_orden = `RX-${clienteId}-${tiempoCorto}`; 
 
-        // 1. Insertamos en la tabla orden
+        // 🎯 CORREGIDO: Se cambiaron las columnas a 'folio_orden', 'id_sucursal' y estatus default 'PENDIENTE'
         const queryOrden = `
-            INSERT INTO orden (folio, id_cliente, id_operador, fecha_emision, estatus, total) 
-            VALUES (?, ?, ?, NOW(), 'Clinica', 0.00)
+            INSERT INTO orden (folio_orden, id_sucursal, fecha_emision, id_cliente, id_operador, total, estatus) 
+            VALUES (?, ?, NOW(), ?, ?, 0.00, 'PENDIENTE')
         `;
-        await connection.query(queryOrden, [folio_orden, clienteId, id_operador]);
+        await connection.query(queryOrden, [folio_orden, sucursalActiva, clienteId, id_operador]);
 
-        // 2. 🎯 NUEVA CONSULTA: Inserta de golpe las columnas divididas en la base de datos
+        // 2. Inserta en graduacion_orden
         const queryGraduacion = `
             INSERT INTO graduacion_orden 
             (folio_orden, od_esfera, od_cilindro, od_eje, od_adicion, oi_esfera, oi_cilindro, oi_eje, oi_adicion, distancia_pupilar, observaciones) 
@@ -160,14 +158,15 @@ const guardarNuevaRX = async (req, res) => {
     } catch (error) {
         await connection.rollback();
         console.error("Error al guardar RX con nueva estructura:", error);
-        res.status(500).json({ error: "Error interno al guardar el historial clínico estructurado." });
+        res.status(500).json({ error: "Error interno al guardar el historial clínico estructurado.", details: error.message });
     } finally {
         connection.release(); 
     }
 };
-// Actualizar una receta existente (Editar campos)
+
+// Actualizar una receta existente
 const actualizarRX = async (req, res) => {
-    const { folio } = req.params; // Pasamos el folio de la orden en la URL
+    const { folio } = req.params; 
     const { 
         od_esfera, od_cilindro, od_eje, od_adicion, 
         oi_esfera, oi_cilindro, oi_eje, oi_adicion, 
@@ -195,7 +194,33 @@ const actualizarRX = async (req, res) => {
         res.status(500).json({ error: "Error interno al actualizar los datos." });
     }
 };
+// Obtener la última receta de un cliente específico
+const obtenerUltimaRX = async (req, res) => {
+    const clienteId = req.params.id;
 
-// Recuerda agregar 'actualizarRX' al module.exports que tienes abajo
+    try {
+        const query = `
+            SELECT 
+                g.od_esfera, g.od_cilindro, g.od_eje, g.od_adicion,
+                g.oi_esfera, g.oi_cilindro, g.oi_eje, g.oi_adicion,
+                g.distancia_pupilar, g.observaciones
+            FROM orden o
+            JOIN graduacion_orden g ON o.folio_orden = g.folio_orden
+            WHERE o.id_cliente = ?
+            ORDER BY o.fecha_emision DESC
+            LIMIT 1`;
 
-module.exports = { crearCliente, obtenerHistorial, obtenerClientes, buscarClientes, guardarNuevaRX, actualizarRX };
+        const [resultado] = await pool.query(query, [clienteId]);
+        
+        if (resultado.length === 0) {
+            return res.status(404).json({ success: false, message: "Este paciente no tiene recetas previas." });
+        }
+
+        res.json({ success: true, data: resultado[0] });
+    } catch (error) {
+        console.error("Error al obtener la última RX:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
+};
+
+module.exports = { crearCliente, obtenerHistorial, obtenerClientes, buscarClientes, guardarNuevaRX, actualizarRX, obtenerUltimaRX };
