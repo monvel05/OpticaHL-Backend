@@ -1,55 +1,69 @@
 // src/controllers/articulo.controller.js
-const pool = require('../config/db');
+const pool = require("../config/db");
 
 // ==========================================
 // CREATE: Crear un nuevo artículo (Transacción)
 // ==========================================
 const crearArticulo = async (req, res) => {
-    const {
-        codigo, nombre, categoria, id_proveedor, costo, precio_venta,
+    const { 
+        codigo, nombre, categoria, id_proveedor, costo, precio_venta, 
         marca, color, material, estilo, puente, diagonal, base, // Detalles del armazón/lente
         id_sucursal, stock_inicial, stock_minimo, ubicacion, // Datos de inventario
-        creado_por
+        creado_por 
     } = req.body;
 
-    const conexion = await pool.getConnection();
+  const conexion = await pool.getConnection();
 
-    try {
-        await conexion.beginTransaction();
+  try {
+    await conexion.beginTransaction();
 
-        // Insertar en ARTICULOS (Aplica para todo, incluyendo SERVICIOS)
-        const queryArticulo = `
+    const queryArticulo = `
             INSERT INTO ARTICULOS (codigo, nombre, categoria, id_proveedor, costo, precio_venta, creado_por)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
-        const [resultArticulo] = await conexion.execute(queryArticulo, [
-            codigo, nombre, categoria, id_proveedor, costo, precio_venta, creado_por
-        ]);
-        const idNuevoArticulo = resultArticulo.insertId;
+    const [resultArticulo] = await conexion.execute(queryArticulo, [
+      safeCodigo,
+      safeNombre,
+      safeCategoria,
+      safeIdProveedor,
+      safeCosto,
+      safePrecioVenta,
+      safeCreadoPor,
+    ]);
+    const idNuevoArticulo = resultArticulo.insertId;
 
         // Si es un SERVICIO, nos saltamos los detalles y el inventario
-        if (categoria !== 'SERVICIO') {
+        if (categoria !== 'SERVICIO') { 
 
             // Insertar en ARTICULO_DETALLE
             const queryDetalle = `
                 INSERT INTO ARTICULO_DETALLE (id_articulo, marca, color, material, estilo, puente, diagonal, base)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `;
-            await conexion.execute(queryDetalle, [
-                idNuevoArticulo, marca, color, material, estilo, puente, diagonal, base
-            ]);
+      await conexion.execute(queryDetalle, [
+        idNuevoArticulo,
+        safeMarca,
+        safeColor,
+        safeMaterial,
+        safeEstilo,
+        safePuente,
+        safeDiagonal,
+        safeBase,
+      ]);
 
-            // Insertar en INVENTARIO_SUCURSAL con el stock inicial
-            const queryInventario = `
-                INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo, ubicacion_estante)
-                VALUES (?, ?, ?, ?, ?)
+      const queryInventario = `
+                INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+                VALUES (?, ?, ?, ?)
             `;
-            await conexion.execute(queryInventario, [
-                idNuevoArticulo, id_sucursal, stock_inicial, stock_minimo, ubicacion
-            ]);
-        }
+      await conexion.execute(queryInventario, [
+        idNuevoArticulo,
+        safeIdSucursal,
+        safeStockInicial,
+        safeStockMinimo,
+      ]);
+    }
 
-        await conexion.commit();
+    await conexion.commit();
 
         res.status(201).json({
             success: true,
@@ -60,48 +74,37 @@ const crearArticulo = async (req, res) => {
     } catch (error) {
         await conexion.rollback();
         console.error('Error en la transacción de creación:', error);
-
+        
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(400).json({ success: false, message: 'El código ya existe.' });
         }
 
-        res.status(500).json({ success: false, message: 'Error interno al registrar.' });
-    } finally {
-        conexion.release();
-    }
+    res
+      .status(500)
+      .json({ success: false, message: "Error interno al registrar." });
+  } finally {
+    conexion.release();
+  }
 };
 
 // ==========================================
-// READ: Obtener artículos activos (PAGINADO)
+// READ: Obtener artículos activos (con sus detalles e inventario)
 // ==========================================
 const obtenerArticulos = async (req, res) => {
-    // 1. Recogemos las variables de paginación y forzamos su conversión a números enteros
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 20;
-    const q = req.query.q || '';
     const { id_sucursal } = req.query;
 
-    // Calculamos el punto de inicio numérico para MySQL
-    const offset = (page - 1) * limit;
-
-    console.log("\n====================================================");
-    console.log("👉 ¡MÉTODO obtenerArticulos SE EJECUTÓ CORRECTAMENTE!");
-    console.log("Variables URL recibidas en req.query:", req.query);
-    console.log(`Parámetros Calculados -> LIMIT: ${limit} | OFFSET: ${offset} | BÚSQUEDA: "${q}"`);
-    console.log("====================================================\n");
-
-    try {
-        let query = `
+  try {
+    // Pedimos TODOS los datos necesarios, incluyendo 'a.categoria' para los íconos del UI
+    let query = `
             SELECT 
-                a.id_articulo, a.codigo, a.nombre, a.categoria, a.costo, a.precio_venta, a.activo,
-                p.nombre AS nombre_proveedor,
-                ad.marca, ad.color, ad.material, ad.estilo,
-                inv.stock_actual, inv.stock_minimo, inv.ubicacion_estante
+                a.id_articulo, a.codigo, a.nombre, a.categoria, a.precio_venta, a.costo,
+                d.marca, d.color, d.material, d.estilo,
+                COALESCE(i.stock_actual, 0) as stock_actual, 
+                COALESCE(i.stock_minimo, 5) as stock_minimo
             FROM ARTICULOS a
-            LEFT JOIN PROVEEDORES p ON a.id_proveedor = p.id_proveedor
-            LEFT JOIN ARTICULO_DETALLE ad ON a.id_articulo = ad.id_articulo
-            LEFT JOIN INVENTARIO_SUCURSAL inv ON a.id_articulo = inv.id_articulo
-            WHERE a.activo = 1
+            LEFT JOIN ARTICULO_DETALLE d ON a.id_articulo = d.id_articulo
+            LEFT JOIN INVENTARIO_SUCURSAL i ON a.id_articulo = i.id_articulo AND i.id_sucursal = ?
+            WHERE 1=1
         `;
 
         const queryParams = [];
@@ -112,30 +115,15 @@ const obtenerArticulos = async (req, res) => {
             queryParams.push(id_sucursal);
         }
 
-        // Filtro de búsqueda dinámica
-        if (q.trim() !== '') {
-            query += ` AND (a.nombre LIKE ? OR a.codigo LIKE ? OR a.id_articulo LIKE ?)`;
-            queryParams.push(`%${q.trim()}%`, `%${q.trim()}%`, `%${q.trim()}%`);
-        }
-
-        // Orden y Límites estrictos
-        query += ` ORDER BY a.nombre ASC LIMIT ? OFFSET ?`;
-
-        // Forzamos que se inyecten como números primitivos puros
-        queryParams.push(Number(limit), Number(offset));
-
-
         const [articulos] = await pool.query(query, queryParams);
-        console.log(`📊 Total de registros devueltos por la BD en esta página: ${articulos.length}`);
 
-        // Devolvemos la respuesta respetando el formato exacto { success: true, data: [...] }
         res.status(200).json({
             success: true,
             data: articulos
         });
 
     } catch (error) {
-        console.error('❌ Error crítico al obtener artículos en la consulta base:', error);
+        console.error('Error al obtener artículos:', error);
         res.status(500).json({ success: false, message: 'Error al consultar los artículos.' });
     }
 };
@@ -145,72 +133,157 @@ const obtenerArticulos = async (req, res) => {
 // ==========================================
 const actualizarArticulo = async (req, res) => {
     const { id_articulo } = req.params;
-    const {
-        nombre, categoria, costo, precio_venta,
+    const { 
+        nombre, categoria, costo, precio_venta, 
         marca, color, material, estilo, puente, diagonal, base
     } = req.body;
 
-    const conexion = await pool.getConnection();
+  const conexion = await pool.getConnection();
 
-    try {
-        await conexion.beginTransaction();
+  try {
+    await conexion.beginTransaction();
 
-        const queryArticulo = `
+    const queryArticulo = `
             UPDATE ARTICULOS 
             SET nombre = ?, categoria = ?, costo = ?, precio_venta = ?
             WHERE id_articulo = ?
         `;
-        await conexion.execute(queryArticulo, [nombre, categoria, costo, precio_venta, id_articulo]);
+    await conexion.execute(queryArticulo, [
+      nombre,
+      categoria,
+      costo,
+      precio_venta,
+      id_articulo,
+    ]);
 
-        // Evitamos actualizar detalle si es un SERVICIO
+        // Evitamos actualizar detalle si es un SERVICIO (porque no existe en la tabla)
         if (categoria !== 'SERVICIO') {
             const queryDetalle = `
                 UPDATE ARTICULO_DETALLE 
                 SET marca = ?, color = ?, material = ?, estilo = ?, puente = ?, diagonal = ?, base = ?
                 WHERE id_articulo = ?
             `;
-            await conexion.execute(queryDetalle, [marca, color, material, estilo, puente, diagonal, base, id_articulo]);
-        }
-
-        await conexion.commit();
-
-        res.status(200).json({
-            success: true,
-            message: 'Artículo actualizado correctamente.'
-        });
-
-    } catch (error) {
-        await conexion.rollback();
-        console.error('Error al actualizar artículo:', error);
-        res.status(500).json({ success: false, message: 'Error interno al actualizar el artículo.' });
-    } finally {
-        conexion.release();
+      // Pasamos nuestras variables seguras (safe) que garantizan que no haya 'undefined'
+      await conexion.execute(queryDetalle, [
+        safeMarca,
+        safeColor,
+        safeMaterial,
+        safeEstilo,
+        safePuente,
+        safeDiagonal,
+        safeBase,
+        id_articulo,
+      ]);
     }
+
+    await conexion.commit();
+
+    res.status(200).json({
+      success: true,
+      message: "Artículo actualizado correctamente.",
+    });
+  } catch (error) {
+    await conexion.rollback();
+    console.error("Error al actualizar artículo:", error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error interno al actualizar el artículo.",
+      });
+  } finally {
+    conexion.release();
+  }
 };
 
 // ==========================================
 // DELETE: Desactivar un artículo (Soft Delete)
 // ==========================================
 const desactivarArticulo = async (req, res) => {
-    const { id_articulo } = req.params;
+  const { id_articulo } = req.params;
 
     try {
+        // En lugar de hacer DELETE, cambiamos activo a 0 para no batallar tanto con el 
+        // historial de ventas y movimientos relacionados al artículo.
         const query = 'UPDATE ARTICULOS SET activo = 0 WHERE id_articulo = ?';
         const [result] = await pool.execute(query, [id_articulo]);
 
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ success: false, message: 'Artículo no encontrado.' });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: 'Artículo desactivado (retirado del catálogo) correctamente.'
-        });
-
-    } catch (error) {
-        console.error('Error al desactivar artículo:', error);
-        res.status(500).json({ success: false, message: 'Error interno al desactivar el artículo.' });
+    if (result.affectedRows === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Artículo no encontrado." });
     }
+
+    res.status(200).json({
+      success: true,
+      message: "Artículo desactivado (retirado del catálogo) correctamente.",
+    });
+  } catch (error) {
+    console.error("Error al desactivar artículo:", error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error interno al desactivar el artículo.",
+      });
+  }
 };
 
-module.exports = { crearArticulo, obtenerArticulos, actualizarArticulo, desactivarArticulo };
+// ==========================================
+// Ajustar el stock rápidamente (Spinner)
+// ==========================================
+const actualizarStock = async (req, res) => {
+  const { id_articulo } = req.params;
+  const { id_sucursal, cantidad_ajuste } = req.body;
+
+  try {
+    const queryCheck = `SELECT stock_actual FROM INVENTARIO_SUCURSAL WHERE id_articulo = ? AND id_sucursal = ?`;
+    const [rows] = await pool.execute(queryCheck, [id_articulo, id_sucursal]);
+
+    if (rows.length === 0) {
+      const stockInicialSeguro = cantidad_ajuste > 0 ? cantidad_ajuste : 0;
+
+      const queryInsert = `
+                INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+                VALUES (?, ?, ?, 5)
+            `;
+      await pool.execute(queryInsert, [
+        id_articulo,
+        id_sucursal,
+        stockInicialSeguro,
+      ]);
+    } else {
+      const queryUpdate = `
+                UPDATE INVENTARIO_SUCURSAL 
+                SET stock_actual = stock_actual + ? 
+                WHERE id_articulo = ? AND id_sucursal = ?
+            `;
+      await pool.execute(queryUpdate, [
+        cantidad_ajuste,
+        id_articulo,
+        id_sucursal,
+      ]);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Stock actualizado correctamente.",
+    });
+  } catch (error) {
+    console.error("Error al actualizar stock:", error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error interno al actualizar inventario.",
+      });
+  }
+};
+
+module.exports = {
+  crearArticulo,
+  obtenerArticulos,
+  actualizarArticulo,
+  desactivarArticulo,
+  actualizarStock,
+};

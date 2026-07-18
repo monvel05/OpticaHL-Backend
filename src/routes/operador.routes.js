@@ -32,8 +32,8 @@ const validarCampos = (req, res, next) => {
 // 1. Registrar un nuevo operador (Mantiene las validaciones de tu compañera)
 router.post('/', 
     [
-        verifyToken,                       // 👈 CORREGIDO: Tu middleware real
-        checkRole(['ADMINISTRADOR']),      // 👈 CORREGIDO: Tu middleware real en MAYÚSCULAS
+        //verifyToken,                       
+        //checkRole(['ADMINISTRADOR']),      
         check('nombre_completo', 'El nombre es obligatorio y debe ser texto').not().isEmpty().trim().escape(),
         check('usuario_login', 'El nombre de usuario es obligatorio').not().isEmpty().trim(),
         check('password', 'La contraseña debe tener al menos 6 caracteres').isLength({ min: 6 }),

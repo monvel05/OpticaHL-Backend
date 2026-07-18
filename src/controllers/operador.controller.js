@@ -49,7 +49,7 @@ const obtenerOperadorPorId = async (req, res) => {
 
 // Crear un nuevo operador (Transacción ACID para Operador + Rol)
 const crearOperador = async (req, res) => {
-  const { nombre_completo, usuario_login, password, id_rol } = req.body;
+  const { nombre_completo, usuario_login, password, id_rol, id_sucursal } = req.body;
   const connection = await pool.getConnection();
 
   try {
@@ -63,18 +63,19 @@ const crearOperador = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
 
-    // 3. Insertar el operador
+    // 3. Insertar el operador (🆕 Añadimos id_sucursal)
+    const sucursalFija = id_sucursal || 'HL01'; // Si no lo mandan, por defecto HL01
     const [result] = await connection.query(
-      `INSERT INTO operadores (nombre_completo, usuario_login, password_hash, activo) 
-       VALUES (?, ?, ?, 1)`,
-      [nombre_completo, usuario_login, password_hash]
+      `INSERT INTO operadores (nombre_completo, usuario_login, password_hash, id_sucursal, activo) 
+       VALUES (?, ?, ?, ?, 1)`,
+      [nombre_completo, usuario_login, password_hash, sucursalFija]
     );
     const id_operador = result.insertId;
 
     // 4. Asignar el rol en la tabla intermedia
     if (id_rol) {
       await connection.query(
-        `INSERT INTO OPERADOR_ROLES (id_operador, id_rol) VALUES (?, ?)`,
+        `INSERT INTO operador_roles (id_operador, id_rol) VALUES (?, ?)`,
         [id_operador, id_rol]
       );
     }
