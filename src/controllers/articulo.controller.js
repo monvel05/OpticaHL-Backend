@@ -8,11 +8,10 @@ const crearArticulo = async (req, res) => {
   const { 
     codigo, nombre, categoria, id_proveedor, costo, precio_venta, 
     marca, color, material, estilo, puente, diagonal, base, 
-    id_sucursal, stock_inicial, stock_minimo, ubicacion, 
+    id_sucursal, stock_inicial, stock_minimo, stocks_sucursales,
     creado_por 
   } = req.body;
 
-  // Variables seguras para evitar problemas con undefined en MySQL
   const safeCodigo = codigo || null;
   const safeNombre = nombre || null;
   const safeCategoria = categoria || 'GENERAL';
@@ -69,16 +68,38 @@ const crearArticulo = async (req, res) => {
         safeBase,
       ]);
 
-      const queryInventario = `
-                INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
-                VALUES (?, ?, ?, ?)
-            `;
-      await conexion.execute(queryInventario, [
-        idNuevoArticulo,
-        safeIdSucursal,
-        safeStockInicial,
-        safeStockMinimo,
-      ]);
+      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM SUCURSALES')
+        .catch(async () => await conexion.query('SELECT id_sucursal FROM sucursales'))
+        .catch(() => [[]]);
+      const validSucIds = (dbSucursales && dbSucursales.length > 0)
+        ? new Set(dbSucursales.map(s => String(s.id_sucursal)))
+        : null;
+
+      const sucursalesProcesar = stocks_sucursales && typeof stocks_sucursales === 'object'
+        ? Object.keys(stocks_sucursales)
+        : [safeIdSucursal];
+
+      for (const sucId of sucursalesProcesar) {
+        if (validSucIds && !validSucIds.has(String(sucId))) {
+          console.warn(`Omitiendo sucursal no registrada en BD: ${sucId}`);
+          continue;
+        }
+
+        const cantStock = stocks_sucursales && stocks_sucursales[sucId] !== undefined
+          ? Number(stocks_sucursales[sucId])
+          : safeStockInicial;
+        const queryInventario = `
+                  INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+                  VALUES (?, ?, ?, ?)
+                  ON DUPLICATE KEY UPDATE stock_actual = VALUES(stock_actual), stock_minimo = VALUES(stock_minimo)
+              `;
+        await conexion.execute(queryInventario, [
+          idNuevoArticulo,
+          sucId,
+          cantStock,
+          safeStockMinimo,
+        ]);
+      }
     }
 
     await conexion.commit();
@@ -147,10 +168,10 @@ const actualizarArticulo = async (req, res) => {
   const { id_articulo } = req.params;
   const { 
     nombre, categoria, costo, precio_venta, 
-    marca, color, material, estilo, puente, diagonal, base
+    marca, color, material, estilo, puente, diagonal, base,
+    id_sucursal, stock_inicial, stock_minimo, stocks_sucursales
   } = req.body;
 
-  // 🎯 CORREGIDO AQUÍ: Agregadas variables seguras locales para evitar ReferenceError al actualizar
   const safeMarca = marca || null;
   const safeColor = color || null;
   const safeMaterial = material || null;
@@ -179,11 +200,14 @@ const actualizarArticulo = async (req, res) => {
 
     if (categoria !== 'SERVICIO') {
       const queryDetalle = `
-                UPDATE ARTICULO_DETALLE 
-                SET marca = ?, color = ?, material = ?, estilo = ?, puente = ?, diagonal = ?, base = ?
-                WHERE id_articulo = ?
+                INSERT INTO ARTICULO_DETALLE (id_articulo, marca, color, material, estilo, puente, diagonal, base)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE 
+                  marca = VALUES(marca), color = VALUES(color), material = VALUES(material),
+                  estilo = VALUES(estilo), puente = VALUES(puente), diagonal = VALUES(diagonal), base = VALUES(base)
             `;
       await conexion.execute(queryDetalle, [
+        id_articulo,
         safeMarca,
         safeColor,
         safeMaterial,
@@ -191,8 +215,48 @@ const actualizarArticulo = async (req, res) => {
         safePuente,
         safeDiagonal,
         safeBase,
-        id_articulo,
       ]);
+
+      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM SUCURSALES')
+        .catch(async () => await conexion.query('SELECT id_sucursal FROM sucursales'))
+        .catch(() => [[]]);
+      const validSucIds = (dbSucursales && dbSucursales.length > 0)
+        ? new Set(dbSucursales.map(s => String(s.id_sucursal)))
+        : null;
+
+      if (stocks_sucursales && typeof stocks_sucursales === 'object') {
+        for (const [sucId, cant] of Object.entries(stocks_sucursales)) {
+          if (validSucIds && !validSucIds.has(String(sucId))) {
+            console.warn(`Omitiendo sucursal no registrada en BD: ${sucId}`);
+            continue;
+          }
+          const queryInventario = `
+            INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE stock_actual = VALUES(stock_actual), stock_minimo = VALUES(stock_minimo)
+          `;
+          await conexion.execute(queryInventario, [
+            id_articulo,
+            sucId,
+            Number(cant) || 0,
+            Number(stock_minimo) || 5
+          ]);
+        }
+      } else if (id_sucursal && stock_inicial !== undefined) {
+        if (!validSucIds || validSucIds.has(String(id_sucursal))) {
+          const queryInventario = `
+            INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE stock_actual = VALUES(stock_actual), stock_minimo = VALUES(stock_minimo)
+          `;
+          await conexion.execute(queryInventario, [
+            id_articulo,
+            id_sucursal,
+            Number(stock_inicial) || 0,
+            Number(stock_minimo) || 5
+          ]);
+        }
+      }
     }
 
     await conexion.commit();

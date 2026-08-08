@@ -18,6 +18,9 @@ router.post('/traslado', checkRole(['ADMINISTRADOR', 'INVENTARIO']), inventarioC
 // Consulta de armazones
 router.get('/armazones', inventarioController.consultarArmazones);
 
+// Obtener lista de sucursales activas
+router.get('/sucursales', inventarioController.obtenerSucursales);
+
 // Obtener inventario general de la sucursal (Armazones, micas, etc.)
 router.get('/general', inventarioController.obtenerInventarioGeneral);
 
