@@ -35,4 +35,12 @@ router.get('/descuentos-mensuales', checkRole(['ADMINISTRADOR', 'CONTADOR']), re
 // Reporte completo de ventas (Cruce de datos entre órdenes, clientes y movimientos de caja)
 router.get('/ventas-completo', checkRole(['ADMINISTRADOR', 'CONTADOR']), reporteController.obtenerReporteVentasCompleto);
 
+// Rutas de Dashboard DB
+router.get('/sucursales', reporteController.obtenerSucursales);
+router.get('/dashboard-multisucursal', reporteController.obtenerDistribucionMultisucursal);
+router.get('/dashboard-top-productos', reporteController.obtenerTopProductosRotacion);
+router.get('/dashboard-baja-rotacion', reporteController.obtenerDashboardBajaRotacion);
+router.get('/dashboard-metricas-financieras', reporteController.obtenerDashboardMetricasFinancieras);
+router.get('/dashboard-productividad-personal', reporteController.obtenerDashboardProductividadPersonal);
+
 module.exports = router;

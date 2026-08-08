@@ -29,6 +29,9 @@ const validarCampos = (req, res, next) => {
 // 👥 RUTAS DEL MÓDULO OPERADORES
 // ==========================================
 
+// 0. Obtener catálogos de roles y sucursales
+router.get('/catalogos', verifyToken, operadorController.obtenerCatalogosOperador);
+
 // 1. Registrar un nuevo operador (Mantiene las validaciones de tu compañera)
 router.post('/', 
     [
@@ -42,7 +45,7 @@ router.post('/',
     operadorController.crearOperador
 );
 
-// 2. Obtener la lista de operadores activos
+// 2. Obtener la lista de operadores con filtros
 router.get('/', verifyToken, operadorController.obtenerOperadores);
 
 // 3. Obtener un operador específico por su ID
@@ -54,7 +57,10 @@ router.put('/:id', verifyToken, operadorController.modificarOperador);
 // 5. Cambiar contraseña de un operador
 router.patch('/:id/password', verifyToken, operadorController.cambiarPassword);
 
-// 6. Dar de baja (Soft Delete) a un operador
+// 6. Cambiar estado activo/inactivo
+router.patch('/:id/estado', verifyToken, operadorController.cambiarEstadoOperador);
+
+// 7. Dar de baja (Soft Delete) a un operador
 router.put('/:id/desactivar', verifyToken, operadorController.desactivarOperador); 
 
 
