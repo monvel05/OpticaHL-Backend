@@ -3,19 +3,18 @@ const router = express.Router();
 const cajaController = require('../controllers/caja.controller');
 
 // Middlewares
-const {verifyToken} = require('../middlewares/auth.middleware');
-const {checkRole} = require('../middlewares/rol.middleware');
+const { verifyToken } = require('../middlewares/auth.middleware');
+const { checkRole } = require('../middlewares/rol.middleware');
 
+// 🖨️ Ruta para el PDF (libre de token)
+router.get('/ticket/:folio', cajaController.descargarTicketPDF);
+
+// Middlewares para las demás rutas
 router.use(verifyToken);
-router.use(checkRole(['CAJERO', 'ADMINISTRADOR'])); 
+router.use(checkRole(['CAJERO', 'CAJER@', 'ADMINISTRADOR', 'MOSTRADOR'])); 
 
-// Traer orden para mostrar en pantalla de cobro
+// Otras rutas
 router.get('/orden/:folio', cajaController.obtenerOrdenParaCobro);
-
-// Procesar el pago 
-router.post('/pago', cajaController.procesarPago);
-
-// Enviar recibo de pago por correo, esta ruta es por si se necesita reenviar el recibo de pago
-router.post('/enviarRecibo', cajaController.enviarReciboPago);
+router.post('/', cajaController.procesarPago);
 
 module.exports = router;
