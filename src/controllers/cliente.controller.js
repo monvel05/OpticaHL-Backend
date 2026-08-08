@@ -30,7 +30,6 @@ const crearCliente = async (req, res) => {
 };
 
 // 🎯 HISTORIAL COMPLETO: Clínico (Graduaciones) + Materiales (Compras Reales)
-// 🎯 HISTORIAL COMPLETO: Clínico (Graduaciones) + Materiales (Compras Reales)
 const obtenerHistorial = async (req, res) => {
     const clienteId = req.params.id;
 
@@ -48,24 +47,25 @@ const obtenerHistorial = async (req, res) => {
             WHERE o.id_cliente = ?
             ORDER BY o.fecha_emision DESC`;
 
-        // 2. Consulta de Compras Reales / Materiales (Con LEFT JOINs para evitar descartar productos generales)
-const queryMateriales = `
-    SELECT 
-        o.folio_orden,
-        o.fecha_emision AS fecha,
-        GROUP_CONCAT(DISTINCT a.nombre SEPARATOR ', ') AS productos,
-        COALESCE(MAX(CASE WHEN a.categoria = 'ARMAZON' THEN CONCAT(COALESCE(ad.marca, ''), ' ', COALESCE(ad.estilo, '')) END), MAX(a.nombre), 'Sin Armazón') AS armazon,
-        COALESCE(MAX(CASE WHEN a.categoria = 'MICA' THEN a.nombre END), 'N/A') AS tipo_lente,
-        COALESCE(MAX(CASE WHEN a.categoria = 'MICA' THEN ad.material END), 'N/A') AS material,
-        COALESCE(MAX(CASE WHEN a.categoria = 'MICA' THEN ad.estilo END), 'Sin tratamiento') AS tratamiento,
-        o.total
-    FROM orden o
-    LEFT JOIN detalle_venta dv ON o.folio_orden = dv.folio_orden
-    LEFT JOIN articulos a ON dv.id_articulo = a.id_articulo
-    LEFT JOIN articulo_detalle ad ON a.id_articulo = ad.id_articulo
-    WHERE o.id_cliente = ? AND o.folio_orden LIKE 'ORD-%'
-    GROUP BY o.folio_orden, o.fecha_emision, o.total
-    ORDER BY o.fecha_emision DESC`;
+        // 2. Consulta de Compras Reales / Materiales
+        const queryMateriales = `
+            SELECT 
+                o.folio_orden,
+                o.fecha_emision AS fecha,
+                GROUP_CONCAT(DISTINCT a.nombre SEPARATOR ', ') AS productos,
+                COALESCE(MAX(CASE WHEN a.categoria = 'ARMAZON' THEN CONCAT(COALESCE(ad.marca, ''), ' ', COALESCE(ad.estilo, '')) END), MAX(a.nombre), 'Sin Armazón') AS armazon,
+                COALESCE(MAX(CASE WHEN a.categoria = 'MICA' THEN a.nombre END), 'N/A') AS tipo_lente,
+                COALESCE(MAX(CASE WHEN a.categoria = 'MICA' THEN ad.material END), 'N/A') AS material,
+                COALESCE(MAX(CASE WHEN a.categoria = 'MICA' THEN ad.estilo END), 'Sin tratamiento') AS tratamiento,
+                o.total
+            FROM orden o
+            LEFT JOIN detalle_venta dv ON o.folio_orden = dv.folio_orden
+            LEFT JOIN articulos a ON dv.id_articulo = a.id_articulo
+            LEFT JOIN articulo_detalle ad ON a.id_articulo = ad.id_articulo
+            WHERE o.id_cliente = ? AND o.folio_orden LIKE 'ORD-%'
+            GROUP BY o.folio_orden, o.fecha_emision, o.total
+            ORDER BY o.fecha_emision DESC`;
+
         const [clinico] = await pool.query(queryClinico, [clienteId]);
         const [materiales] = await pool.query(queryMateriales, [clienteId]);
 
@@ -82,6 +82,7 @@ const queryMateriales = `
         res.status(500).json({ error: "Error interno del servidor", details: error.message });
     }
 };
+
 // Obtener clientes con paginacion
 const obtenerClientes = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
@@ -132,7 +133,7 @@ const buscarClientes = async (req, res) => {
     }
 };
 
-// Guardar nueva receta (Manejo de Transacción con la Nueva Estructura)
+// Guardar nueva receta (Manejo de Transacción)
 const guardarNuevaRX = async (req, res) => {
     const clienteId = req.params.id;
     const id_operador = req.user?.id || req.usuario?.id || 1;
@@ -250,6 +251,37 @@ const obtenerUltimaRX = async (req, res) => {
     }
 };
 
+// Actualizar datos personales de un cliente
+const actualizarCliente = async (req, res) => {
+    const { id } = req.params;
+    const { nombre_completo, telefono, email, rfc, domicilio, colonia, cp, localidad, estado } = req.body;
+
+    try {
+        const query = `
+            UPDATE clientes 
+            SET nombre_completo = ?, telefono = ?, email = ?, rfc = ?, domicilio = ?, colonia = ?, cp = ?, localidad = ?, estado = ?
+            WHERE id_cliente = ?
+        `;
+
+        const [result] = await pool.query(query, [
+            nombre_completo, telefono, email, rfc, domicilio, colonia, cp, localidad, estado, id
+        ]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'Cliente no encontrado.' });
+        }
+
+        return res.json({ 
+            success: true, 
+            message: 'Cliente actualizado correctamente en MySQL' 
+        });
+
+    } catch (error) {
+        console.error('Error MySQL al actualizar cliente:', error);
+        return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
+    }
+};
+
 module.exports = { 
     crearCliente, 
     obtenerHistorial, 
@@ -257,5 +289,6 @@ module.exports = {
     buscarClientes, 
     guardarNuevaRX, 
     actualizarRX, 
-    obtenerUltimaRX 
+    obtenerUltimaRX,
+    actualizarCliente 
 };

@@ -22,7 +22,7 @@ router.get('/:id/ultima-rx', checkRole(['ADMINISTRADOR', 'Optometrista', 'OPTOME
 
 
 // ==========================================
-// 📥 RUTAS DE ESCRITURA (POST)
+// 📥 RUTAS DE ESCRITURA Y ACTUALIZACIÓN (POST / PUT)
 // ==========================================
 
 // Guardar nueva RX / refracción
@@ -30,5 +30,8 @@ router.post('/:id/rx', checkRole(['ADMINISTRADOR', 'Optometrista', 'OPTOMETRISTA
 
 // Alta rápida de clientes desde el mostrador
 router.post('/', clienteController.crearCliente);
+
+// ✏️ NUEVA: Actualizar datos personales del cliente (Soluciona el error 404 al presionar CAMBIAR)
+router.put('/:id', checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'CAJER@', 'FACTURADOR@', 'Optometrista', 'OPTOMETRISTA']), clienteController.actualizarCliente);
 
 module.exports = router;
