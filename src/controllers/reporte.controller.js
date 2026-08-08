@@ -307,18 +307,22 @@ const obtenerReporteVentasCompleto = async (req, res) => {
   const { fechaInicio, fechaFin } = req.query;
 
   try {
-    const query = `
+    let query = `
       SELECT o.folio, o.fecha_emision, c.nombre_completo AS cliente, 
              o.total AS total_orden, o.estatus,
              IFNULL(SUM(m.monto), 0) AS total_pagado
       FROM orden o
       JOIN clientes c ON o.id_cliente = c.id_cliente
       LEFT JOIN movimientos_caja m ON o.folio = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
-      WHERE DATE(o.fecha_emision) BETWEEN ? AND ?
-      GROUP BY o.folio
-      ORDER BY o.fecha_emision DESC
     `;
-    const [resultados] = await pool.query(query, [fechaInicio, fechaFin]);
+    const params = [];
+    if (fechaInicio && fechaFin) {
+      query += ` WHERE DATE(o.fecha_emision) BETWEEN ? AND ? `;
+      params.push(fechaInicio, fechaFin);
+    }
+    query += ` GROUP BY o.folio ORDER BY o.fecha_emision DESC `;
+
+    const [resultados] = await pool.query(query, params);
     res.status(200).json({ exito: true, datos: resultados });
   } catch (error) {
     console.error("Error en obtenerReporteVentasCompleto:", error);
