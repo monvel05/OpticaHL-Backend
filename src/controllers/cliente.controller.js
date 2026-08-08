@@ -29,15 +29,17 @@ const crearCliente = async (req, res) => {
     }
 };
 
-// Obtener Historial Clínico
+// 🎯 HISTORIAL COMPLETO: Clínico (Graduaciones) + Materiales (Compras Reales)
+// 🎯 HISTORIAL COMPLETO: Clínico (Graduaciones) + Materiales (Compras Reales)
 const obtenerHistorial = async (req, res) => {
     const clienteId = req.params.id;
 
     try {
-        // 🎯 CORREGIDO: Cambiado 'o.folio' por 'o.folio_orden' para la nueva BD
-        const query = `
+        // 1. Consulta de Graduaciones / Historial Clínico
+        const queryClinico = `
             SELECT 
-                o.folio_orden AS folio, o.fecha_emision,
+                o.folio_orden AS folio, 
+                o.fecha_emision,
                 g.od_esfera, g.od_cilindro, g.od_eje, g.od_adicion,
                 g.oi_esfera, g.oi_cilindro, g.oi_eje, g.oi_adicion,
                 g.distancia_pupilar, g.observaciones
@@ -46,14 +48,40 @@ const obtenerHistorial = async (req, res) => {
             WHERE o.id_cliente = ?
             ORDER BY o.fecha_emision DESC`;
 
-        const [historial] = await pool.query(query, [clienteId]);
-        res.json(historial);
+        // 2. Consulta de Compras Reales / Materiales (Con LEFT JOINs para evitar descartar productos generales)
+const queryMateriales = `
+    SELECT 
+        o.folio_orden,
+        o.fecha_emision AS fecha,
+        GROUP_CONCAT(DISTINCT a.nombre SEPARATOR ', ') AS productos,
+        COALESCE(MAX(CASE WHEN a.categoria = 'ARMAZON' THEN CONCAT(COALESCE(ad.marca, ''), ' ', COALESCE(ad.estilo, '')) END), MAX(a.nombre), 'Sin Armazón') AS armazon,
+        COALESCE(MAX(CASE WHEN a.categoria = 'MICA' THEN a.nombre END), 'N/A') AS tipo_lente,
+        COALESCE(MAX(CASE WHEN a.categoria = 'MICA' THEN ad.material END), 'N/A') AS material,
+        COALESCE(MAX(CASE WHEN a.categoria = 'MICA' THEN ad.estilo END), 'Sin tratamiento') AS tratamiento,
+        o.total
+    FROM orden o
+    LEFT JOIN detalle_venta dv ON o.folio_orden = dv.folio_orden
+    LEFT JOIN articulos a ON dv.id_articulo = a.id_articulo
+    LEFT JOIN articulo_detalle ad ON a.id_articulo = ad.id_articulo
+    WHERE o.id_cliente = ? AND o.folio_orden LIKE 'ORD-%'
+    GROUP BY o.folio_orden, o.fecha_emision, o.total
+    ORDER BY o.fecha_emision DESC`;
+        const [clinico] = await pool.query(queryClinico, [clienteId]);
+        const [materiales] = await pool.query(queryMateriales, [clienteId]);
+
+        res.json({
+            success: true,
+            data: {
+                clinico,
+                materiales
+            }
+        });
+
     } catch (error) {
-        console.error("Error al recuperar el historial:", error);
+        console.error("Error al recuperar el historial completo:", error);
         res.status(500).json({ error: "Error interno del servidor", details: error.message });
     }
 };
-
 // Obtener clientes con paginacion
 const obtenerClientes = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
@@ -107,13 +135,13 @@ const buscarClientes = async (req, res) => {
 // Guardar nueva receta (Manejo de Transacción con la Nueva Estructura)
 const guardarNuevaRX = async (req, res) => {
     const clienteId = req.params.id;
-    const id_operador = req.user?.id || req.usuario?.id || 1; // Respaldo si cambia la propiedad de sesión
+    const id_operador = req.user?.id || req.usuario?.id || 1;
     
     const { 
         od_esfera, od_cilindro, od_eje, od_adicion, 
         oi_esfera, oi_cilindro, oi_eje, oi_adicion, 
         distancia_pupilar, observaciones,
-        id_sucursal // Si el front lo manda lo tomamos, si no ponemos por defecto la matriz HL01
+        id_sucursal
     } = req.body;
 
     const sucursalActiva = id_sucursal || 'HL01';
@@ -126,14 +154,12 @@ const guardarNuevaRX = async (req, res) => {
         const tiempoCorto = String(Date.now()).slice(-5);
         const folio_orden = `RX-${clienteId}-${tiempoCorto}`; 
 
-        // 🎯 CORREGIDO: Se cambiaron las columnas a 'folio_orden', 'id_sucursal' y estatus default 'PENDIENTE'
         const queryOrden = `
             INSERT INTO orden (folio_orden, id_sucursal, fecha_emision, id_cliente, id_operador, total, estatus) 
             VALUES (?, ?, NOW(), ?, ?, 0.00, 'PENDIENTE')
         `;
         await connection.query(queryOrden, [folio_orden, sucursalActiva, clienteId, id_operador]);
 
-        // 2. Inserta en graduacion_orden
         const queryGraduacion = `
             INSERT INTO graduacion_orden 
             (folio_orden, od_esfera, od_cilindro, od_eje, od_adicion, oi_esfera, oi_cilindro, oi_eje, oi_adicion, distancia_pupilar, observaciones) 
@@ -194,6 +220,7 @@ const actualizarRX = async (req, res) => {
         res.status(500).json({ error: "Error interno al actualizar los datos." });
     }
 };
+
 // Obtener la última receta de un cliente específico
 const obtenerUltimaRX = async (req, res) => {
     const clienteId = req.params.id;
@@ -223,4 +250,12 @@ const obtenerUltimaRX = async (req, res) => {
     }
 };
 
-module.exports = { crearCliente, obtenerHistorial, obtenerClientes, buscarClientes, guardarNuevaRX, actualizarRX, obtenerUltimaRX };
+module.exports = { 
+    crearCliente, 
+    obtenerHistorial, 
+    obtenerClientes, 
+    buscarClientes, 
+    guardarNuevaRX, 
+    actualizarRX, 
+    obtenerUltimaRX 
+};

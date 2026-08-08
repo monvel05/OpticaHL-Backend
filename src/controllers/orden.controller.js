@@ -2,9 +2,7 @@
 const pool = require('../config/db');
 
 // Crear Orden de venta
-// Crear Orden de venta
 const crearOrden = async (req, res) => {
-  // 🎯 Log para ver exactamente qué le está llegando al Backend desde Angular
   console.log("=== DATOS RECIBIDOS DESDE EL FRONTEND ===");
   console.log(JSON.stringify(req.body, null, 2));
   console.log("=========================================");
@@ -12,7 +10,6 @@ const crearOrden = async (req, res) => {
   const { id_cliente, id_sucursal, total } = req.body;
   const id_operador = req.usuario?.id || req.user?.id || 1; 
 
-  // Busquemos dinámicamente cualquier propiedad que sea un Arreglo (Array) en el body
   let listaArticulos = null;
   for (let key in req.body) {
     if (Array.isArray(req.body[key])) {
@@ -22,7 +19,6 @@ const crearOrden = async (req, res) => {
     }
   }
 
-  // Si a pesar de buscar cualquier arreglo no encuentra nada, usamos un plan de rescate
   if (!listaArticulos || !Array.isArray(listaArticulos)) {
     console.error("❌ ERROR: No se encontró ningún arreglo de productos en req.body");
     return res.status(400).json({ 
@@ -46,7 +42,6 @@ const crearOrden = async (req, res) => {
     );
 
     for (let item of listaArticulos) {
-      // Mapeo ultra-flexible de propiedades del producto
       const idArticulo = item.id_articulo || item.id || item.codigo;
       const cantidad = item.cantidad || item.qty || item.cant || 1;
       const precio = item.precio_unitario || item.precio || item.precio_venta || item.costo || 0;
@@ -77,9 +72,45 @@ const crearOrden = async (req, res) => {
   }
 };
 
-// Obtener Órdenes
+// Obtener Órdenes (General y por Folio Individual)
 const obtenerOrdenes = async (req, res) => {
+  // 🎯 Detectamos si el folio viene en la URL como /:id
+  const { id } = req.params; 
   const { fecha_inicio, fecha_fin, estatus, id_cliente } = req.query;
+
+  // Si viene un ID/Folio en los parámetros, buscamos solo esa orden con sus detalles
+  if (id) {
+    try {
+      const queryOrden = `
+        SELECT o.folio_orden AS folio, o.fecha_emision, o.total, o.estatus, c.nombre_completo AS paciente_nombre 
+        FROM orden o 
+        JOIN clientes c ON o.id_cliente = c.id_cliente
+        WHERE o.folio_orden = ?`;
+      
+      const [ordenRows] = await pool.query(queryOrden, [id]);
+
+      if (ordenRows.length === 0) {
+        return res.status(404).json({ exito: false, mensaje: 'Orden no encontrada.' });
+      }
+
+      // Opcional: También traemos los artículos de esa orden para mostrarlos en la caja
+      const queryDetalles = `
+        SELECT dv.id_articulo, dv.cantidad, dv.precio_unitario
+        FROM detalle_venta dv
+        WHERE dv.folio_orden = ?`;
+      const [detalles] = await pool.query(queryDetalles, [id]);
+
+      // Unimos la orden con sus productos en la respuesta
+      const ordenCompleta = { ...ordenRows[0], articulos: detalles };
+
+      return res.status(200).json({ exito: true, datos: ordenCompleta });
+    } catch (error) {
+      console.error('Error al obtener orden por folio:', error);
+      return res.status(500).json({ exito: false, mensaje: 'Error al obtener la orden.' });
+    }
+  }
+
+  // SI NO VIENE ID, BUSCAMOS TODAS NORMALMENTE POR FILTROS
   let query = `SELECT o.folio_orden AS folio, o.fecha_emision, o.total, o.estatus, c.nombre_completo AS paciente_nombre 
                FROM orden o JOIN clientes c ON o.id_cliente = c.id_cliente`;
 
@@ -235,4 +266,11 @@ const obtenerCuentasPorCobrar = async (req, res) => {
   }
 };
 
-module.exports = { crearOrden, obtenerOrdenes, modificarOrden, registrarPago, cancelarOrden, obtenerCuentasPorCobrar };
+module.exports = { 
+  crearOrden, 
+  obtenerOrdenes, 
+  modificarOrden, 
+  registrarPago, 
+  cancelarOrden, 
+  obtenerCuentasPorCobrar 
+};
