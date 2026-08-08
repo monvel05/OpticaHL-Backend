@@ -40,13 +40,12 @@ const obtenerOperadores = async (req, res) => {
     let query = `
       SELECT 
         o.id_operador, 
-        o.cveope_historicos, 
         o.nombre_completo, 
         o.usuario_login, 
         o.descripcion, 
         o.activo, 
         o.id_sucursal,
-        s.nombre AS nombre_sucursal,
+        IFNULL(s.nombre, CONCAT('Sucursal ', o.id_sucursal)) AS nombre_sucursal,
         GROUP_CONCAT(DISTINCT r.nombre_rol) AS roles_concatenados,
         GROUP_CONCAT(DISTINCT r.id_rol) AS roles_ids
       FROM operadores o
@@ -69,8 +68,14 @@ const obtenerOperadores = async (req, res) => {
     }
 
     if (rol && rol !== 'all' && rol !== '') {
-      query += ` AND (r.nombre_rol LIKE ? OR r.id_rol = ?) `;
-      params.push(`%${rol}%`, rol);
+      const numRol = Number(rol);
+      if (!isNaN(numRol)) {
+        query += ` AND (r.nombre_rol LIKE ? OR r.id_rol = ?) `;
+        params.push(`%${rol}%`, numRol);
+      } else {
+        query += ` AND r.nombre_rol LIKE ? `;
+        params.push(`%${rol}%`);
+      }
     }
 
     if (busqueda && busqueda.trim() !== '') {
@@ -82,7 +87,7 @@ const obtenerOperadores = async (req, res) => {
 
     const [operadoresRaw] = await pool.query(query, params);
 
-    const datosFormat = operadoresRaw.map(op => {
+    const datosFormat = (operadoresRaw || []).map(op => {
       const rolesArray = op.roles_concatenados ? op.roles_concatenados.split(',') : [];
       return {
         ...op,

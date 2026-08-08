@@ -263,26 +263,38 @@ const obtenerInventarioGeneral = async (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   const offset = (page - 1) * limit;
 
-  if (!id_sucursal) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Falta especificar la sucursal." });
-  }
+  const esTodas = !id_sucursal || id_sucursal === 'TODAS' || id_sucursal === 'ALL' || id_sucursal === '0';
 
   try {
-    let query = `
-            SELECT 
-                a.id_articulo, a.codigo, a.nombre, a.categoria, a.precio_venta, a.costo,
-                IFNULL(inv.stock_actual, 0) AS stock_actual, 
-                IFNULL(inv.stock_minimo, 0) AS stock_minimo, 
-                det.marca, det.color, det.material, det.estilo
-            FROM articulos a
-            LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo AND inv.id_sucursal = ?
-            LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
-            WHERE a.activo = 1
-        `;
+    let query = '';
+    let queryParams = [];
 
-    const queryParams = [id_sucursal];
+    if (esTodas) {
+      query = `
+        SELECT 
+            a.id_articulo, a.codigo, a.nombre, a.categoria, a.precio_venta, a.costo,
+            IFNULL(SUM(inv.stock_actual), 0) AS stock_actual, 
+            IFNULL(MIN(inv.stock_minimo), 5) AS stock_minimo, 
+            det.marca, det.color, det.material, det.estilo
+        FROM articulos a
+        LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo
+        LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
+        WHERE a.activo = 1
+      `;
+    } else {
+      query = `
+        SELECT 
+            a.id_articulo, a.codigo, a.nombre, a.categoria, a.precio_venta, a.costo,
+            IFNULL(inv.stock_actual, 0) AS stock_actual, 
+            IFNULL(inv.stock_minimo, 5) AS stock_minimo, 
+            det.marca, det.color, det.material, det.estilo
+        FROM articulos a
+        LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo AND inv.id_sucursal = ?
+        LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
+        WHERE a.activo = 1
+      `;
+      queryParams.push(id_sucursal);
+    }
 
     if (categoria && categoria !== "sucursales") {
       if (categoria === "Z" || categoria === "ARMAZON") {
@@ -296,10 +308,24 @@ const obtenerInventarioGeneral = async (req, res) => {
       }
     }
 
-    query += ` ORDER BY a.id_articulo DESC LIMIT ? OFFSET ?`;
+    query += ` GROUP BY a.id_articulo ORDER BY a.id_articulo DESC LIMIT ? OFFSET ?`;
     queryParams.push(limit, offset);
 
     const [articulos] = await pool.query(query, queryParams);
+
+    let stocksPorArticulo = {};
+    if (articulos.length > 0) {
+      const ids = articulos.map(a => a.id_articulo);
+      const [branchStocks] = await pool.query(
+        `SELECT id_articulo, id_sucursal, stock_actual FROM INVENTARIO_SUCURSAL WHERE id_articulo IN (?)`,
+        [ids]
+      ).catch(() => [[]]);
+
+      (branchStocks || []).forEach(row => {
+        if (!stocksPorArticulo[row.id_articulo]) stocksPorArticulo[row.id_articulo] = {};
+        stocksPorArticulo[row.id_articulo][row.id_sucursal] = Number(row.stock_actual || 0);
+      });
+    }
 
     const datosMapeados = articulos.map((art) => {
       let catLimpia = art.categoria ? art.categoria.toUpperCase().trim() : "Z";
@@ -308,18 +334,30 @@ const obtenerInventarioGeneral = async (req, res) => {
         categoria: catLimpia,
         precio_venta: Number(art.precio_venta) || 0,
         costo: Number(art.costo) || 0,
+        stock_actual: Number(art.stock_actual) || 0,
+        stock_minimo: Number(art.stock_minimo) || 5,
         marca: art.marca || "Sin Marca",
         color: art.color || "N/A",
         material: art.material || "N/A",
+        stocks_sucursales: stocksPorArticulo[art.id_articulo] || {}
       };
     });
 
     res.status(200).json({ success: true, data: datosMapeados });
   } catch (error) {
     console.error("Error al obtener inventario general:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Error interno del servidor." });
+    res.status(500).json({ success: false, message: "Error interno del servidor." });
+  }
+};
+
+const obtenerSucursales = async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT id_sucursal, nombre FROM SUCURSALES WHERE activo = 1')
+      .catch(async () => await pool.query('SELECT id_sucursal, nombre FROM sucursales'));
+    res.status(200).json({ success: true, data: rows || [] });
+  } catch (error) {
+    console.error('Error al obtener sucursales:', error);
+    res.status(500).json({ success: false, message: 'Error al consultar sucursales.' });
   }
 };
 
@@ -330,4 +368,5 @@ module.exports = {
   activarArticuloSucursal,
   consultarArmazones,
   obtenerInventarioGeneral,
+  obtenerSucursales,
 };
