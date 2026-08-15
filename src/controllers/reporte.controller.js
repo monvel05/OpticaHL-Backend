@@ -128,16 +128,16 @@ const obtenerIngresosPorMetodo = async (req, res) => {
 const obtenerAntiguedadSaldos = async (req, res) => {
   try {
     const query = `
-      SELECT o.folio, o.fecha_emision, o.total, c.nombre_completo AS paciente, c.telefono,
+      SELECT o.folio_orden AS folio, o.fecha_emision, o.total, c.nombre_completo AS paciente, c.telefono,
              IFNULL(SUM(m.monto), 0) AS total_pagado,
              (o.total - IFNULL(SUM(m.monto), 0)) AS saldo_pendiente,
              DATEDIFF(NOW(), o.fecha_emision) AS dias_antiguedad
       FROM orden o
       JOIN clientes c ON o.id_cliente = c.id_cliente
-      LEFT JOIN movimientos_caja m ON o.folio = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
+      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
       WHERE o.estatus IN ('Con Anticipo', 'Pendiente')
         AND o.fecha_emision <= DATE_SUB(NOW(), INTERVAL 30 DAY)
-      GROUP BY o.folio, c.id_cliente
+      GROUP BY o.folio_orden, c.id_cliente
       HAVING saldo_pendiente > 0
       ORDER BY dias_antiguedad DESC
     `;
@@ -206,7 +206,7 @@ const obtenerInventarioLentoMovimiento = async (req, res) => {
         AND a.id_articulo NOT IN (
             SELECT dv.id_articulo
             FROM detalle_venta dv
-            JOIN orden o ON dv.folio_orden = o.folio
+            JOIN orden o ON dv.folio_orden = o.folio_orden
             WHERE o.fecha_emision >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
         )
     `;
@@ -244,16 +244,16 @@ const obtenerProductividadOperadores = async (req, res) => {
   try {
     const query = `
       SELECT op.id_operador, op.nombre_completo AS operador,
-             COUNT(DISTINCT o.folio) AS total_ventas_cerradas,
+             COUNT(DISTINCT o.folio_orden) AS total_ventas_cerradas,
              IFNULL(SUM(o.total), 0) AS ingresos_generados,
-             IFNULL(SUM(o.total) / NULLIF(COUNT(DISTINCT o.folio), 0), 0) AS ticket_promedio,
+             IFNULL(SUM(o.total) / NULLIF(COUNT(DISTINCT o.folio_orden), 0), 0) AS ticket_promedio,
              COUNT(DISTINCT g.id_graduacion) AS examenes_realizados
       FROM operadores op
       LEFT JOIN orden o ON op.id_operador = o.id_operador 
            AND MONTH(o.fecha_emision) = ? 
            AND YEAR(o.fecha_emision) = ?
            AND o.estatus != 'Cancelada'
-      LEFT JOIN graduacion_orden g ON o.folio = g.folio_orden
+      LEFT JOIN graduacion_orden g ON o.folio_orden = g.folio_orden
       GROUP BY op.id_operador
       ORDER BY ingresos_generados DESC
     `;
@@ -308,19 +308,19 @@ const obtenerReporteVentasCompleto = async (req, res) => {
 
   try {
     let query = `
-      SELECT o.folio, o.fecha_emision, c.nombre_completo AS cliente, 
+      SELECT o.folio_orden AS folio, o.fecha_emision, c.nombre_completo AS cliente, 
              o.total AS total_orden, o.estatus,
              IFNULL(SUM(m.monto), 0) AS total_pagado
       FROM orden o
       JOIN clientes c ON o.id_cliente = c.id_cliente
-      LEFT JOIN movimientos_caja m ON o.folio = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
+      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
     `;
     const params = [];
     if (fechaInicio && fechaFin) {
       query += ` WHERE DATE(o.fecha_emision) BETWEEN ? AND ? `;
       params.push(fechaInicio, fechaFin);
     }
-    query += ` GROUP BY o.folio ORDER BY o.fecha_emision DESC `;
+    query += ` GROUP BY o.folio_orden ORDER BY o.fecha_emision DESC `;
 
     const [resultados] = await pool.query(query, params);
     res.status(200).json({ exito: true, datos: resultados });
@@ -409,11 +409,11 @@ const obtenerTopProductosRotacion = async (req, res) => {
         a.nombre,
         a.categoria,
         IFNULL(SUM(dv.cantidad), 0) AS unidadesVendidas,
-        IFNULL(SUM(dv.subtotal), 0) AS totalVentas,
+        IFNULL(SUM(dv.cantidad * dv.precio_unitario), 0) AS totalVentas,
         IFNULL(inv.stock_actual, 0) AS stockActual
       FROM articulos a
       JOIN detalle_venta dv ON a.id_articulo = dv.id_articulo
-      JOIN orden o ON dv.folio_orden = o.folio AND o.estatus != 'Cancelada'
+      JOIN orden o ON dv.folio_orden = o.folio_orden AND o.estatus != 'Cancelada'
       LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo
     `;
     const params = [];
@@ -451,13 +451,13 @@ const obtenerDashboardBajaRotacion = async (req, res) => {
         inv.stock_actual AS stockActual,
         IFNULL(DATEDIFF(NOW(), MAX(o.fecha_emision)), 120) AS diasEstancado,
         0 AS unidadesVendidasPeriodo,
-        a.precio_publico AS precioUnitario,
-        (inv.stock_actual * IFNULL(a.precio_publico, 1000)) AS capitalEstancado
+        a.precio_venta AS precioUnitario,
+        (inv.stock_actual * IFNULL(a.precio_venta, 1000)) AS capitalEstancado
       FROM articulos a
       JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo
       LEFT JOIN sucursales s ON inv.id_sucursal = s.id_sucursal
       LEFT JOIN detalle_venta dv ON a.id_articulo = dv.id_articulo
-      LEFT JOIN orden o ON dv.folio_orden = o.folio
+      LEFT JOIN orden o ON dv.folio_orden = o.folio_orden
       WHERE inv.stock_actual > 0
     `;
     const params = [];
@@ -558,7 +558,7 @@ const obtenerDashboardProductividadPersonal = async (req, res) => {
         op.id_sucursal AS sucursalId,
         'MOSTRADOR' AS rol,
         IFNULL(SUM(o.total), 0) AS ventasCerradasMonto,
-        COUNT(o.folio) AS ventasCerradasCantidad,
+        COUNT(o.folio_orden) AS ventasCerradasCantidad,
         IFNULL(AVG(o.total), 0) AS ticketPromedio,
         0 AS refraccionesCompletadas
       FROM operadores op
@@ -591,7 +591,7 @@ const obtenerDashboardProductividadPersonal = async (req, res) => {
       FROM operadores op
       LEFT JOIN sucursales s ON op.id_sucursal = s.id_sucursal
       LEFT JOIN orden o ON op.id_operador = o.id_operador
-      LEFT JOIN graduacion_orden g ON o.folio = g.folio_orden
+      LEFT JOIN graduacion_orden g ON o.folio_orden = g.folio_orden
       LEFT JOIN operador_roles opr ON op.id_operador = opr.id_operador
       LEFT JOIN roles r ON opr.id_rol = r.id_rol
       WHERE (r.nombre_rol LIKE '%OPTOMETRISTA%' OR op.nombre_completo LIKE '%Dr%')

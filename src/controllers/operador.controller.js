@@ -42,7 +42,7 @@ const obtenerOperadores = async (req, res) => {
         o.id_operador, 
         o.nombre_completo, 
         o.usuario_login, 
-        o.descripcion, 
+        GROUP_CONCAT(DISTINCT r.descripcion) AS descripcion, 
         o.activo, 
         o.id_sucursal,
         IFNULL(s.nombre, CONCAT('Sucursal ', o.id_sucursal)) AS nombre_sucursal,
@@ -112,7 +112,7 @@ const obtenerOperadorPorId = async (req, res) => {
         o.id_operador, 
         o.nombre_completo, 
         o.usuario_login, 
-        o.descripcion, 
+        GROUP_CONCAT(DISTINCT r.descripcion) AS descripcion, 
         o.activo, 
         o.id_sucursal,
         GROUP_CONCAT(DISTINCT r.nombre_rol) AS roles_concatenados
@@ -152,13 +152,13 @@ const crearOperador = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password || '123456', salt);
 
-    const sucursalFija = id_sucursal || 1;
+    const sucursalFija = id_sucursal || 'HL01';
     const isActivo = activo !== undefined ? (activo ? 1 : 0) : 1;
 
     const [result] = await connection.query(
-      `INSERT INTO operadores (nombre_completo, usuario_login, password_hash, id_sucursal, activo, descripcion) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [nombre_completo, usuario_login, password_hash, sucursalFija, isActivo, descripcion || null]
+      `INSERT INTO operadores (nombre_completo, usuario_login, password_hash, id_sucursal, activo) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [nombre_completo, usuario_login, password_hash, sucursalFija, isActivo]
     );
     const id_operador = result.insertId;
 
@@ -205,7 +205,6 @@ const modificarOperador = async (req, res) => {
     if (usuario_login) { updates.push('usuario_login = ?'); params.push(usuario_login); }
     if (id_sucursal) { updates.push('id_sucursal = ?'); params.push(id_sucursal); }
     if (activo !== undefined) { updates.push('activo = ?'); params.push(activo ? 1 : 0); }
-    if (descripcion !== undefined) { updates.push('descripcion = ?'); params.push(descripcion); }
 
     if (updates.length > 0) {
       params.push(id);

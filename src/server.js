@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const auditLogger = require('./middlewares/audit.middleware'); // Middleware de auditoría
@@ -23,6 +24,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(auditLogger); 
+app.use('/facturas', express.static(path.join(__dirname, '../public/facturas'))); 
 
 // Ruta de prueba
 app.get('/api/health', (req, res) => {

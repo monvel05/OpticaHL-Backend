@@ -6,7 +6,7 @@ const pool = require("../config/db");
 // ==========================================
 const crearArticulo = async (req, res) => {
   const { 
-    codigo, nombre, categoria, id_proveedor, costo, precio_venta, 
+    codigo, nombre, categoria, id_proveedor, costo, precio_venta, unidad,
     marca, color, material, estilo, puente, diagonal, base, 
     id_sucursal, stock_inicial, stock_minimo, stocks_sucursales,
     creado_por 
@@ -18,6 +18,7 @@ const crearArticulo = async (req, res) => {
   const safeIdProveedor = id_proveedor || null;
   const safeCosto = costo || 0.00;
   const safePrecioVenta = precio_venta || 0.00;
+  const safeUnidad = unidad || 'H87';
   const safeCreadoPor = creado_por || null;
 
   const safeMarca = marca || null;
@@ -38,8 +39,8 @@ const crearArticulo = async (req, res) => {
     await conexion.beginTransaction();
 
     const queryArticulo = `
-            INSERT INTO ARTICULOS (codigo, nombre, categoria, id_proveedor, costo, precio_venta, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ARTICULOS (codigo, nombre, categoria, id_proveedor, costo, precio_venta, unidad, creado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
     const [resultArticulo] = await conexion.execute(queryArticulo, [
       safeCodigo,
@@ -48,6 +49,7 @@ const crearArticulo = async (req, res) => {
       safeIdProveedor,
       safeCosto,
       safePrecioVenta,
+      safeUnidad,
       safeCreadoPor,
     ]);
     const idNuevoArticulo = resultArticulo.insertId;
@@ -167,11 +169,12 @@ const obtenerArticulos = async (req, res) => {
 const actualizarArticulo = async (req, res) => {
   const { id_articulo } = req.params;
   const { 
-    nombre, categoria, costo, precio_venta, 
+    nombre, categoria, costo, precio_venta, unidad,
     marca, color, material, estilo, puente, diagonal, base,
     id_sucursal, stock_inicial, stock_minimo, stocks_sucursales
   } = req.body;
 
+  const safeUnidad = unidad || 'H87';
   const safeMarca = marca || null;
   const safeColor = color || null;
   const safeMaterial = material || null;
@@ -187,7 +190,7 @@ const actualizarArticulo = async (req, res) => {
 
     const queryArticulo = `
             UPDATE ARTICULOS 
-            SET nombre = ?, categoria = ?, costo = ?, precio_venta = ?
+            SET nombre = ?, categoria = ?, costo = ?, precio_venta = ?, unidad = ?
             WHERE id_articulo = ?
         `;
     await conexion.execute(queryArticulo, [
@@ -195,6 +198,7 @@ const actualizarArticulo = async (req, res) => {
       categoria,
       costo,
       precio_venta,
+      safeUnidad,
       id_articulo,
     ]);
 

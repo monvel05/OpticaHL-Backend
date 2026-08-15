@@ -308,7 +308,7 @@ const obtenerInventarioGeneral = async (req, res) => {
       }
     }
 
-    query += ` GROUP BY a.id_articulo ORDER BY a.id_articulo DESC LIMIT ? OFFSET ?`;
+    query += ` GROUP BY a.id_articulo, a.codigo, a.nombre, a.categoria, a.precio_venta, a.costo, det.marca, det.color, det.material, det.estilo ORDER BY a.id_articulo DESC LIMIT ? OFFSET ?`;
     queryParams.push(limit, offset);
 
     const [articulos] = await pool.query(query, queryParams);
