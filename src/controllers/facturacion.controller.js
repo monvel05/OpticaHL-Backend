@@ -454,7 +454,7 @@ const cancelarFactura = async (req, res) => {
       return res.status(400).json({ exito: false, mensaje: 'La factura ya se encuentra cancelada previamente.' });
     }
 
-    const codigoRespuestaSat = `Cancelado (Motivo ${motivo})`;
+    const codigoRespuestaSat = `201 - Motivo ${motivo}`.slice(0, 45);
     const acuse_pac = JSON.stringify({ mensaje: "Cancelación procesada ante el SAT", acuse: `ACUSE_${Date.now()}` });
 
     await connection.query(
