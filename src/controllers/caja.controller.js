@@ -18,14 +18,12 @@ const enviarReciboPago = async (
   }
 
   try {
-    // 1. Obtener datos actualizados de la orden
     const [ordenes] = await pool.query(
       `SELECT total, estatus FROM orden WHERE TRIM(folio_orden) = ?`,
       [folioOrden]
     );
     const orden = ordenes[0] || { total: 0, estatus: 'PENDIENTE' };
 
-    // 2. Obtener detalle de productos
     let articulos = [];
     try {
       const [filas] = await pool.query(
@@ -40,7 +38,6 @@ const enviarReciboPago = async (
       console.warn("Error consultando articulos para correo:", e.message);
     }
 
-    // 3. Obtener historial de pagos
     const [pagos] = await pool.query(
       `SELECT metodo_pago, monto, fecha_hora 
        FROM movimientos_caja 
@@ -49,7 +46,6 @@ const enviarReciboPago = async (
       [folioOrden]
     );
 
-    // Construir filas de artículos
     let filasArticulosHTML = "";
     if (articulos.length > 0) {
       articulos.forEach((item) => {
@@ -62,7 +58,6 @@ const enviarReciboPago = async (
       filasArticulosHTML = `<p style="margin: 3px 0;">Venta de Graduación / Servicio de Óptica</p>`;
     }
 
-    // Construir filas de pagos
     let filasPagosHTML = "";
     let totalPagado = 0;
     if (pagos.length > 0) {
@@ -79,7 +74,6 @@ const enviarReciboPago = async (
     const totalGeneral = parseFloat(orden.total || 0);
     const fechaEmision = new Date().toLocaleDateString();
 
-    // 4. Configurar transporte Nodemailer
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -88,7 +82,6 @@ const enviarReciboPago = async (
       },
     });
 
-    // 5. Correo estilo Ticket
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: emailDestino,
@@ -224,10 +217,48 @@ const obtenerOrdenParaCobro = async (req, res) => {
 
 /**
  * @function procesarPago
- * @description Procesa pago en caja y registra el abono
+ * @description Procesa pagos (Ingresos de órdenes) y egresos (gastos de caja)
  */
 const procesarPago = async (req, res) => {
-  const { folio, folio_orden, folioOrden, id_orden, monto, metodo_pago, id_sucursal } = req.body;
+  const { folio, folio_orden, folioOrden, id_orden, monto, metodo_pago, id_sucursal, tipo_movimiento, concepto, id_gasto } = req.body;
+  const tipoMov = (tipo_movimiento || 'INGRESO').toUpperCase();
+
+  // SI ES UN EGRESO / GASTO DE CAJA
+  if (tipoMov === 'EGRESO' || tipoMov === 'GASTO') {
+    try {
+      const id_operador = req.user?.id || req.usuario?.id || 1;
+      const montoGasto = parseFloat(monto || 0);
+
+      if (montoGasto <= 0) {
+        return res.status(400).json({ mensaje: "El monto del gasto debe ser mayor a 0." });
+      }
+
+      await pool.query(
+        `INSERT INTO movimientos_caja 
+         (id_sucursal, id_operador, folio_orden, id_gasto, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
+         VALUES (?, ?, ?, ?, 'EGRESO', ?, ?, NOW(), ?)`,
+        [
+          id_sucursal || "HL01", 
+          id_operador, 
+          null, 
+          id_gasto || 1, 
+          (metodo_pago || 'EFECTIVO').toUpperCase(), 
+          montoGasto, 
+          concepto || 'Gasto General'
+        ]
+      );
+
+      return res.status(200).json({
+        success: true,
+        mensaje: "Gasto registrado correctamente"
+      });
+    } catch (error) {
+      console.error("Error al registrar gasto en caja:", error);
+      return res.status(500).json({ mensaje: "Error interno al procesar el gasto." });
+    }
+  }
+
+  // SI ES UN INGRESO (PAGO DE PACIENTE POR ORDEN)
   const busqueda = folio || folio_orden || folioOrden || id_orden || "";
   const busquedaLimpia = String(busqueda).trim();
 
@@ -430,7 +461,7 @@ const descargarTicketPDF = async (req, res) => {
 
 /**
  * @function obtenerCorteCaja
- * @description Obtiene el resumen del dinero en caja del día
+ * @description Obtiene el resumen del dinero en caja que aún NO se ha cortado
  */
 const obtenerCorteCaja = async (req, res) => {
   try {
@@ -446,7 +477,7 @@ const obtenerCorteCaja = async (req, res) => {
         o.total AS total_orden
       FROM movimientos_caja m
       LEFT JOIN orden o ON TRIM(m.folio_orden) = TRIM(o.folio_orden)
-      WHERE DATE(m.fecha_hora) = CURDATE()
+      WHERE DATE(m.fecha_hora) = CURDATE() AND (m.corte_realizado = 0 OR m.corte_realizado IS NULL)
       ORDER BY m.id_movimiento DESC
     `);
 
@@ -491,13 +522,13 @@ const obtenerCorteCaja = async (req, res) => {
 
 /**
  * @function descargarTicketCortePDF
- * @description Genera un reporte PDF formal en hoja Carta (LETTER)
+ * @description Genera el reporte PDF y MARCA los movimientos como cortados en la BD
  */
 const descargarTicketCortePDF = async (req, res) => {
   try {
     const [movimientos] = await pool.query(`
       SELECT m.* FROM movimientos_caja m
-      WHERE DATE(m.fecha_hora) = CURDATE()
+      WHERE DATE(m.fecha_hora) = CURDATE() AND (m.corte_realizado = 0 OR m.corte_realizado IS NULL)
       ORDER BY m.id_movimiento ASC
     `);
 
@@ -519,7 +550,13 @@ const descargarTicketCortePDF = async (req, res) => {
 
     const saldoNeto = totalIngresos - totalEgresos;
 
-    // Configurar PDF en tamaño CARTA / LETTER con márgenes amplios
+    // Marcar como cortados para limpiar caja
+    await pool.query(`
+      UPDATE movimientos_caja 
+      SET corte_realizado = 1 
+      WHERE DATE(fecha_hora) = CURDATE() AND (corte_realizado = 0 OR corte_realizado IS NULL)
+    `);
+
     const doc = new PDFDocument({ margin: 40, size: "LETTER" });
 
     res.setHeader("Content-Type", "application/pdf");
@@ -527,22 +564,19 @@ const descargarTicketCortePDF = async (req, res) => {
 
     doc.pipe(res);
 
-    // ENCABEZADO FORMAL
     doc.fillColor("#2c3e50").fontSize(22).text("ÓPTICA HL", { align: "center" });
     doc.fontSize(14).text("REPORTE OFICIAL DE CORTE DE CAJA", { align: "center" });
     doc.fillColor("#7f8c8d").fontSize(9).text(`Fecha: ${new Date().toLocaleDateString()}  |  Hora: ${new Date().toLocaleTimeString()}`, { align: "center" });
     doc.moveDown(1.5);
 
-    // LÍNEA DIVISORIA
     doc.moveTo(40, doc.y).lineTo(572, doc.y).strokeColor("#34495e").lineWidth(1.5).stroke();
     doc.moveDown(1.5);
 
-    // RESUMEN EN TABLA / BLOQUES
     doc.fillColor("#2c3e50").fontSize(12).text("RESUMEN DE CAJA", { underline: true });
     doc.moveDown(0.8);
 
     doc.fontSize(10).fillColor("#2c3e50");
-    doc.text(`(+) Efectivo en Caja:      $${efectivo.toFixed(2)}`);
+    doc.text(`(+) Efectivo en Caja:       $${efectivo.toFixed(2)}`);
     doc.text(`(+) Pagos con Tarjeta:    $${tarjeta.toFixed(2)}`);
     doc.text(`(+) Transferencias:       $${transferencia.toFixed(2)}`);
     doc.text(`(-) Egresos / Retiros:    $${totalEgresos.toFixed(2)}`);
@@ -551,18 +585,15 @@ const descargarTicketCortePDF = async (req, res) => {
     doc.fillColor("#27ae60").fontSize(13).text(`TOTAL NETO EN CAJA: $${saldoNeto.toFixed(2)}`);
     doc.moveDown(1.5);
 
-    // LÍNEA DIVISORIA
     doc.moveTo(40, doc.y).lineTo(572, doc.y).strokeColor("#bdc3c7").lineWidth(1).stroke();
     doc.moveDown(1.5);
 
-    // TABLA DE MOVIMIENTOS
     doc.fillColor("#2c3e50").fontSize(12).text("DETALLE DE MOVIMIENTOS DEL DÍA");
     doc.moveDown(1);
 
     if (movimientos.length > 0) {
       let y = doc.y;
       
-      // Encabezados de Columna
       doc.fillColor("#34495e").fontSize(9);
       doc.text("HORA", 40, y, { width: 70 });
       doc.text("TIPO", 110, y, { width: 80 });
@@ -574,27 +605,25 @@ const descargarTicketCortePDF = async (req, res) => {
       doc.moveTo(40, y).lineTo(572, y).strokeColor("#bdc3c7").lineWidth(0.5).stroke();
       y += 8;
 
-      // Filas de datos
       doc.fillColor("#2c3e50").fontSize(9);
       movimientos.forEach((mov) => {
         const hora = new Date(mov.fecha_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
         doc.text(hora, 40, y, { width: 70 });
         doc.text(mov.tipo_movimiento, 110, y, { width: 80 });
-        doc.text(mov.folio_orden || 'GENERAL', 190, y, { width: 170 });
+        doc.text(mov.folio_orden || mov.concepto || 'GASTO GENERAL', 190, y, { width: 170 });
         doc.text(mov.metodo_pago, 360, y, { width: 100 });
         doc.text(`$${parseFloat(mov.monto).toFixed(2)}`, 460, y, { width: 110, align: "right" });
         
         y += 20;
 
-        // Salto de página automático si se llena la hoja
         if (y > 720) {
           doc.addPage();
           y = 50;
         }
       });
     } else {
-      doc.fontSize(9).fillColor("#7f8c8d").text("No se registraron movimientos en el día de hoy.");
+      doc.fontSize(9).fillColor("#7f8c8d").text("No se registraron movimientos en este corte.");
     }
 
     doc.end();
