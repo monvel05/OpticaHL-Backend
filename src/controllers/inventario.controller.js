@@ -15,7 +15,7 @@ const obtenerAlertasStock = async (req, res) => {
                 s.nombre AS sucursal
             FROM INVENTARIO_SUCURSAL inv
             JOIN ARTICULOS a ON inv.id_articulo = a.id_articulo
-            JOIN SUCURSALES s ON inv.id_sucursal = s.id_sucursal
+            JOIN SUCURSALES s ON inv.id_sucursal = s.id_sucursal AND s.activo = 1
             WHERE inv.stock_actual <= inv.stock_minimo AND a.activo = 1
         `;
 
@@ -101,14 +101,20 @@ const trasladarStock = async (req, res) => {
   try {
     await conexion.beginTransaction();
 
-    const queryOrigen =
-      "SELECT stock_actual FROM INVENTARIO_SUCURSAL WHERE id_articulo = ? AND id_sucursal = ?";
-    const [rowsOrigen] = await conexion.execute(queryOrigen, [
+    // 1. Descontar de la sucursal de origen
+    const queryDescuento = `
+            UPDATE INVENTARIO_SUCURSAL 
+            SET stock_actual = stock_actual - ? 
+            WHERE id_articulo = ? AND id_sucursal = ? AND stock_actual >= ?
+        `;
+    const [resDescuento] = await conexion.execute(queryDescuento, [
+      cantidad,
       id_articulo,
       id_sucursal_origen,
+      cantidad,
     ]);
 
-    if (rowsOrigen.length === 0 || rowsOrigen[0].stock_actual < cantidad) {
+    if (resDescuento.affectedRows === 0) {
       await conexion.rollback();
       return res.status(400).json({
         success: false,
@@ -117,146 +123,89 @@ const trasladarStock = async (req, res) => {
       });
     }
 
-    const queryRestar =
-      "UPDATE INVENTARIO_SUCURSAL SET stock_actual = stock_actual - ? WHERE id_articulo = ? AND id_sucursal = ?";
-    await conexion.execute(queryRestar, [
-      cantidad,
-      id_articulo,
-      id_sucursal_origen,
-    ]);
-
-    const queryVerificarDestino =
-      "SELECT id_inventario FROM INVENTARIO_SUCURSAL WHERE id_articulo = ? AND id_sucursal = ?";
-    const [rowsDestino] = await conexion.execute(queryVerificarDestino, [
+    // 2. Aumentar en la sucursal de destino
+    const queryAumento = `
+            INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+            VALUES (?, ?, ?, 5)
+            ON DUPLICATE KEY UPDATE stock_actual = stock_actual + ?
+        `;
+    await conexion.execute(queryAumento, [
       id_articulo,
       id_sucursal_destino,
+      cantidad,
+      cantidad,
     ]);
 
-    if (rowsDestino.length > 0) {
-      const querySumar =
-        "UPDATE INVENTARIO_SUCURSAL SET stock_actual = stock_actual + ? WHERE id_articulo = ? AND id_sucursal = ?";
-      await conexion.execute(querySumar, [
-        cantidad,
-        id_articulo,
-        id_sucursal_destino,
-      ]);
-    } else {
-      const queryInsertar = `
-                INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo) 
-                VALUES (?, ?, ?, 2)
-            `;
-      await conexion.execute(queryInsertar, [
-        id_articulo,
-        id_sucursal_destino,
-        Math.max(0, cantidad),
-      ]);
-    }
+    // 3. Registrar el movimiento en la auditoría/bitácora
+    const queryAudit = `
+            INSERT INTO audit_logs (id_operador, accion, modulo, detalles)
+            VALUES (?, 'TRASLADO_STOCK', 'INVENTARIO', ?)
+        `;
+    const detalles = `Traslado de ${cantidad} unidades del articulo ID ${id_articulo} de sucursal ${id_sucursal_origen} a ${id_sucursal_destino}`;
+    await conexion.execute(queryAudit, [
+      id_operador || null,
+      detalles,
+    ]);
 
     await conexion.commit();
 
-    res.status(200).json({
-      success: true,
-      message: `Se trasladaron ${cantidad} piezas correctamente de ${id_sucursal_origen} a ${id_sucursal_destino}.`,
-    });
+    res
+      .status(200)
+      .json({ success: true, message: "Traslado de stock exitoso." });
   } catch (error) {
     await conexion.rollback();
     console.error("Error al trasladar stock:", error);
     res
       .status(500)
-      .json({
-        success: false,
-        message: "Error interno al procesar el traslado.",
-      });
+      .json({ success: false, message: "Error interno al procesar el traslado." });
   } finally {
     conexion.release();
   }
 };
 
 // ==========================================
-// ACTIVAR ARTÍCULO EN NUEVA SUCURSAL
+// ACTIVAR ARTICULO EN SUCURSAL
 // ==========================================
 const activarArticuloSucursal = async (req, res) => {
-  const { id_articulo, id_sucursal } = req.params;
-  const { stock_inicial, stock_minimo } = req.body;
-
+  const { id_articulo, id_sucursal } = req.body;
   try {
     const query = `
-            INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
-            VALUES (?, ?, ?, ?)
-        `;
-
-    await pool.execute(query, [
-      id_articulo,
-      id_sucursal,
-      stock_inicial,
-      stock_minimo,
-    ]);
-
-    res.status(201).json({
-      success: true,
-      message:
-        "El artículo ha sido activado en el inventario de esta sucursal.",
-    });
+      INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+      VALUES (?, ?, 0, 5)
+      ON DUPLICATE KEY UPDATE stock_actual = stock_actual
+    `;
+    await pool.execute(query, [id_articulo, id_sucursal]);
+    res.status(200).json({ success: true, message: "Artículo activado en la sucursal." });
   } catch (error) {
     console.error("Error al activar artículo en sucursal:", error);
-
-    if (error.code === "ER_DUP_ENTRY") {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Este artículo ya está registrado en el inventario de esta sucursal.",
-      });
-    }
-
-    res
-      .status(500)
-      .json({ success: false, message: "Error interno del servidor." });
+    res.status(500).json({ success: false, message: "Error interno." });
   }
 };
 
 // ==========================================
-// CONSULTA DE ARMAZONES (FILTRO RÁPIDO)
+// CONSULTAR ARMAZONES
 // ==========================================
 const consultarArmazones = async (req, res) => {
-  const { id_sucursal } = req.query;
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 50;
-  const offset = (page - 1) * limit;
-
-  if (!id_sucursal) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Falta especificar la sucursal." });
-  }
-
   try {
     const query = `
-            SELECT a.codigo, a.nombre, det.color, det.marca, inv.stock_actual
-            FROM articulos a
-            JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo
-            LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
-            WHERE (a.categoria = 'Armazon' OR a.categoria = 'Z') 
-              AND inv.id_sucursal = ? 
-              AND inv.stock_actual > 0
-              AND a.activo = 1
-            ORDER BY a.nombre ASC
-            LIMIT ? OFFSET ?
-        `;
-
-    const [armazones] = await pool.query(query, [id_sucursal, limit, offset]);
-
+      SELECT 
+        a.id_articulo, a.codigo, a.nombre, a.precio_venta, a.costo,
+        det.marca, det.color, det.material, det.estilo, det.puente, det.diagonal, det.base
+      FROM ARTICULOS a
+      JOIN ARTICULO_DETALLE det ON a.id_articulo = det.id_articulo
+      WHERE a.categoria = 'Z' AND a.activo = 1
+    `;
+    const [armazones] = await pool.query(query);
     res.status(200).json({ success: true, data: armazones });
   } catch (error) {
     console.error("Error al consultar armazones:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Error interno del servidor." });
+    res.status(500).json({ success: false, message: "Error interno." });
   }
 };
 
-// =========================================================
-// OBTENER INVENTARIO GENERAL POR SUCURSAL
-// =========================================================
+// ==========================================
+// INVENTARIO GENERAL PAGINADO (MULTI-SUCURSAL)
+// ==========================================
 const obtenerInventarioGeneral = async (req, res) => {
   const { id_sucursal, categoria } = req.query;
   const page = parseInt(req.query.page) || 1;
@@ -273,11 +222,12 @@ const obtenerInventarioGeneral = async (req, res) => {
       query = `
         SELECT 
             a.id_articulo, a.codigo, a.nombre, a.categoria, a.precio_venta, a.costo,
-            IFNULL(SUM(inv.stock_actual), 0) AS stock_actual, 
+            IFNULL(SUM(CASE WHEN s.id_sucursal IS NOT NULL THEN inv.stock_actual ELSE 0 END), 0) AS stock_actual, 
             IFNULL(MIN(inv.stock_minimo), 5) AS stock_minimo, 
             det.marca, det.color, det.material, det.estilo
         FROM articulos a
         LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo
+        LEFT JOIN sucursales s ON inv.id_sucursal = s.id_sucursal AND s.activo = 1
         LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
         WHERE a.activo = 1
       `;
@@ -317,9 +267,18 @@ const obtenerInventarioGeneral = async (req, res) => {
     if (articulos.length > 0) {
       const ids = articulos.map(a => a.id_articulo);
       const [branchStocks] = await pool.query(
-        `SELECT id_articulo, id_sucursal, stock_actual FROM INVENTARIO_SUCURSAL WHERE id_articulo IN (?)`,
+        `SELECT inv.id_articulo, inv.id_sucursal, inv.stock_actual 
+         FROM INVENTARIO_SUCURSAL inv 
+         JOIN SUCURSALES s ON inv.id_sucursal = s.id_sucursal AND s.activo = 1 
+         WHERE inv.id_articulo IN (?)`,
         [ids]
-      ).catch(() => [[]]);
+      ).catch(async () => await pool.query(
+        `SELECT inv.id_articulo, inv.id_sucursal, inv.stock_actual 
+         FROM inventario_sucursal inv 
+         JOIN sucursales s ON inv.id_sucursal = s.id_sucursal AND s.activo = 1 
+         WHERE inv.id_articulo IN (?)`,
+        [ids]
+      )).catch(() => [[]]);
 
       (branchStocks || []).forEach(row => {
         if (!stocksPorArticulo[row.id_articulo]) stocksPorArticulo[row.id_articulo] = {};
@@ -352,8 +311,8 @@ const obtenerInventarioGeneral = async (req, res) => {
 
 const obtenerSucursales = async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT id_sucursal, nombre FROM SUCURSALES WHERE activo = 1')
-      .catch(async () => await pool.query('SELECT id_sucursal, nombre FROM sucursales'));
+    const [rows] = await pool.query('SELECT id_sucursal, nombre FROM SUCURSALES WHERE activo = 1 ORDER BY id_sucursal ASC')
+      .catch(async () => await pool.query('SELECT id_sucursal, nombre FROM sucursales WHERE activo = 1 ORDER BY id_sucursal ASC'));
     res.status(200).json({ success: true, data: rows || [] });
   } catch (error) {
     console.error('Error al obtener sucursales:', error);

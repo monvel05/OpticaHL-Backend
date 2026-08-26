@@ -361,11 +361,33 @@ const obtenerSucursales = async (req, res) => {
   }
 };
 
+function construirFiltroFechaSQL(rangoTiempo, fechaInicio, fechaFin, campoFecha = 'm.fecha_hora') {
+  let condition = '';
+  const params = [];
+
+  if (rangoTiempo === 'DIARIO') {
+    condition = ` AND DATE(${campoFecha}) = CURDATE() `;
+  } else if (rangoTiempo === 'SEMANAL') {
+    condition = ` AND DATE(${campoFecha}) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) `;
+  } else if (rangoTiempo === 'ANUAL') {
+    condition = ` AND YEAR(${campoFecha}) = YEAR(CURDATE()) `;
+  } else if (rangoTiempo === 'PERSONALIZADO' && fechaInicio && fechaFin) {
+    condition = ` AND DATE(${campoFecha}) BETWEEN ? AND ? `;
+    params.push(fechaInicio, fechaFin);
+  } else {
+    // MENSUAL por defecto
+    condition = ` AND DATE(${campoFecha}) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) `;
+  }
+
+  return { condition, params };
+}
+
 /**
  * Dashboard DB 1: Distribución Comercial Multisucursal
  */
 const obtenerDistribucionMultisucursal = async (req, res) => {
-  const { id_sucursal, rangoTiempo } = req.query;
+  const { id_sucursal, rangoTiempo, fechaInicio, fechaFin } = req.query;
+  const dateFilter = construirFiltroFechaSQL(rangoTiempo, fechaInicio, fechaFin, 'm.fecha_hora');
 
   try {
     let query = `
@@ -375,9 +397,9 @@ const obtenerDistribucionMultisucursal = async (req, res) => {
         IFNULL(SUM(m.monto), 0) AS montoTotal,
         COUNT(DISTINCT m.id_movimiento) AS numTransacciones
       FROM sucursales s
-      LEFT JOIN movimientos_caja m ON s.id_sucursal = m.id_sucursal AND m.tipo_movimiento = 'ENTRADA'
+      LEFT JOIN movimientos_caja m ON s.id_sucursal = m.id_sucursal AND m.tipo_movimiento = 'INGRESO' ${dateFilter.condition}
     `;
-    const params = [];
+    const params = [...dateFilter.params];
 
     if (id_sucursal && id_sucursal !== '0') {
       query += ` WHERE s.id_sucursal = ? `;
@@ -399,7 +421,8 @@ const obtenerDistribucionMultisucursal = async (req, res) => {
  * Dashboard DB 2: Top 10 Productos de Mayor Rotación
  */
 const obtenerTopProductosRotacion = async (req, res) => {
-  const { id_sucursal } = req.query;
+  const { id_sucursal, rangoTiempo, fechaInicio, fechaFin } = req.query;
+  const dateFilter = construirFiltroFechaSQL(rangoTiempo, fechaInicio, fechaFin, 'o.fecha_emision');
 
   try {
     let query = `
@@ -413,10 +436,10 @@ const obtenerTopProductosRotacion = async (req, res) => {
         IFNULL(inv.stock_actual, 0) AS stockActual
       FROM articulos a
       JOIN detalle_venta dv ON a.id_articulo = dv.id_articulo
-      JOIN orden o ON dv.folio_orden = o.folio_orden AND o.estatus != 'Cancelada'
+      JOIN orden o ON dv.folio_orden = o.folio_orden AND o.estatus != 'CANCELADA' ${dateFilter.condition}
       LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo
     `;
-    const params = [];
+    const params = [...dateFilter.params];
 
     if (id_sucursal && id_sucursal !== '0') {
       query += ` WHERE o.id_sucursal = ? `;
@@ -495,16 +518,17 @@ const obtenerDashboardBajaRotacion = async (req, res) => {
  * Dashboard DB 4: Métricas Financieras
  */
 const obtenerDashboardMetricasFinancieras = async (req, res) => {
-  const { id_sucursal, rangoTiempo } = req.query;
+  const { id_sucursal, rangoTiempo, fechaInicio, fechaFin } = req.query;
+  const dateFilter = construirFiltroFechaSQL(rangoTiempo, fechaInicio, fechaFin, 'fecha_hora');
 
   try {
     let query = `
       SELECT 
         IFNULL(SUM(monto), 0) AS ingresoReal
       FROM movimientos_caja
-      WHERE tipo_movimiento = 'ENTRADA'
+      WHERE tipo_movimiento = 'INGRESO' ${dateFilter.condition}
     `;
-    const params = [];
+    const params = [...dateFilter.params];
     if (id_sucursal && id_sucursal !== '0') {
       query += ` AND id_sucursal = ?`;
       params.push(id_sucursal);
@@ -513,14 +537,14 @@ const obtenerDashboardMetricasFinancieras = async (req, res) => {
     const [rowIngreso] = await pool.query(query, params);
     const ingresoReal = Number(rowIngreso[0]?.ingresoReal || 0);
 
-    const ingresoProyectado = Math.round(ingresoReal * 1.1) || 500000;
+    const ingresoProyectado = Math.round(ingresoReal * 1.1);
     const gananciaBruta = Math.round(ingresoReal * 0.6);
     const gastosOperativos = Math.round(ingresoReal * 0.25);
     const gananciaNeta = gananciaBruta - gastosOperativos;
 
-    const margenBrutoPorcentaje = ingresoReal > 0 ? Number(((gananciaBruta / ingresoReal) * 100).toFixed(1)) : 60;
-    const margenNetoPorcentaje = ingresoReal > 0 ? Number(((gananciaNeta / ingresoReal) * 100).toFixed(1)) : 35;
-    const cumplimientoMetaPorcentaje = ingresoProyectado > 0 ? Number(((ingresoReal / ingresoProyectado) * 100).toFixed(1)) : 90;
+    const margenBrutoPorcentaje = ingresoReal > 0 ? Number(((gananciaBruta / ingresoReal) * 100).toFixed(1)) : 0;
+    const margenNetoPorcentaje = ingresoReal > 0 ? Number(((gananciaNeta / ingresoReal) * 100).toFixed(1)) : 0;
+    const cumplimientoMetaPorcentaje = ingresoProyectado > 0 ? Number(((ingresoReal / ingresoProyectado) * 100).toFixed(1)) : 0;
 
     res.status(200).json({
       exito: true,
@@ -547,7 +571,8 @@ const obtenerDashboardMetricasFinancieras = async (req, res) => {
  * Dashboard DB 5: Productividad de Personal
  */
 const obtenerDashboardProductividadPersonal = async (req, res) => {
-  const { id_sucursal } = req.query;
+  const { id_sucursal, rangoTiempo, fechaInicio, fechaFin } = req.query;
+  const dateFilter = construirFiltroFechaSQL(rangoTiempo, fechaInicio, fechaFin, 'o.fecha_emision');
 
   try {
     let queryMostrador = `
@@ -563,12 +588,12 @@ const obtenerDashboardProductividadPersonal = async (req, res) => {
         0 AS refraccionesCompletadas
       FROM operadores op
       LEFT JOIN sucursales s ON op.id_sucursal = s.id_sucursal
-      LEFT JOIN orden o ON op.id_operador = o.id_operador AND o.estatus != 'Cancelada'
+      LEFT JOIN orden o ON op.id_operador = o.id_operador AND o.estatus != 'CANCELADA' ${dateFilter.condition}
       LEFT JOIN operador_roles opr ON op.id_operador = opr.id_operador
       LEFT JOIN roles r ON opr.id_rol = r.id_rol
       WHERE (r.nombre_rol LIKE '%MOSTRADOR%' OR r.nombre_rol LIKE '%CAJA%' OR r.nombre_rol IS NULL)
     `;
-    const paramsM = [];
+    const paramsM = [...dateFilter.params];
     if (id_sucursal && id_sucursal !== '0') {
       queryMostrador += ` AND op.id_sucursal = ? `;
       paramsM.push(id_sucursal);
@@ -590,13 +615,13 @@ const obtenerDashboardProductividadPersonal = async (req, res) => {
         COUNT(g.id_graduacion) AS refraccionesCompletadas
       FROM operadores op
       LEFT JOIN sucursales s ON op.id_sucursal = s.id_sucursal
-      LEFT JOIN orden o ON op.id_operador = o.id_operador
+      LEFT JOIN orden o ON op.id_operador = o.id_operador ${dateFilter.condition}
       LEFT JOIN graduacion_orden g ON o.folio_orden = g.folio_orden
       LEFT JOIN operador_roles opr ON op.id_operador = opr.id_operador
       LEFT JOIN roles r ON opr.id_rol = r.id_rol
       WHERE (r.nombre_rol LIKE '%OPTOMETRISTA%' OR op.nombre_completo LIKE '%Dr%')
     `;
-    const paramsO = [];
+    const paramsO = [...dateFilter.params];
     if (id_sucursal && id_sucursal !== '0') {
       queryOpto += ` AND op.id_sucursal = ? `;
       paramsO.push(id_sucursal);

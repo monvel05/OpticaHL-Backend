@@ -82,9 +82,10 @@ const obtenerOrdenes = async (req, res) => {
   if (id) {
     try {
       const queryOrden = `
-        SELECT o.folio_orden AS folio, o.fecha_emision, o.total, o.estatus, c.nombre_completo AS paciente_nombre 
+        SELECT o.folio_orden AS folio, o.fecha_emision, o.total, o.estatus, 
+               c.nombre_completo AS paciente_nombre, c.telefono, c.celular, c.email 
         FROM orden o 
-        JOIN clientes c ON o.id_cliente = c.id_cliente
+        LEFT JOIN clientes c ON o.id_cliente = c.id_cliente
         WHERE o.folio_orden = ?`;
       
       const [ordenRows] = await pool.query(queryOrden, [id]);
@@ -111,8 +112,9 @@ const obtenerOrdenes = async (req, res) => {
   }
 
   // SI NO VIENE ID, BUSCAMOS TODAS NORMALMENTE POR FILTROS
-  let query = `SELECT o.folio_orden AS folio, o.fecha_emision, o.total, o.estatus, c.nombre_completo AS paciente_nombre 
-               FROM orden o JOIN clientes c ON o.id_cliente = c.id_cliente`;
+  let query = `SELECT o.folio_orden AS folio, o.fecha_emision, o.total, o.estatus, 
+                      c.nombre_completo AS paciente_nombre, c.telefono, c.celular, c.email 
+               FROM orden o LEFT JOIN clientes c ON o.id_cliente = c.id_cliente`;
 
   const params = [];
   if (fecha_inicio && fecha_fin) {

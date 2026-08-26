@@ -3,23 +3,23 @@ const pool = require('../config/db');
 // Alta de Cliente
 const crearCliente = async (req, res) => {
     const { 
-        nombre_completo, rfc, telefono, email, 
+        nombre_completo, rfc, telefono, celular, email, 
         domicilio, colonia, cp, localidad, estado, 
         creado_por
     } = req.body;
 
-    if (!nombre_completo || !telefono || !email) {
-        return res.status(400).json({ error: "Nombre, teléfono y email son obligatorios." });
+    if (!nombre_completo || !nombre_completo.trim()) {
+        return res.status(400).json({ error: "El nombre completo del cliente es obligatorio." });
     }
 
     try {
         const query = `INSERT INTO clientes 
-            (nombre_completo, rfc, telefono, email, domicilio, colonia, cp, localidad, estado, creado_por) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            (nombre_completo, rfc, telefono, celular, email, domicilio, colonia, cp, localidad, estado, creado_por) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
         
         const [result] = await pool.query(query, [
-            nombre_completo, rfc, telefono, email, 
-            domicilio, colonia, cp, localidad, estado, creado_por
+            nombre_completo.trim(), rfc || null, telefono || null, celular || null, email || null, 
+            domicilio || null, colonia || null, cp || null, localidad || null, estado || null, creado_por || 1
         ]);
         
         res.status(201).json({ id_cliente: result.insertId, message: "Cliente registrado exitosamente" });
@@ -86,12 +86,12 @@ const obtenerHistorial = async (req, res) => {
 // Obtener clientes con paginacion
 const obtenerClientes = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const limit = parseInt(req.query.limit) || 50;
     const offset = (page - 1) * limit;
 
     try {
         const query = `
-            SELECT id_cliente, nombre_completo, telefono, email, rfc 
+            SELECT id_cliente, nombre_completo, telefono, celular, email, rfc, domicilio, colonia, cp, localidad, estado
             FROM clientes 
             ORDER BY id_cliente DESC 
             LIMIT ? OFFSET ?`;
@@ -108,7 +108,7 @@ const obtenerClientes = async (req, res) => {
 const buscarClientes = async (req, res) => {
     const { q } = req.query; 
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const limit = parseInt(req.query.limit) || 50;
     const offset = (page - 1) * limit;
     
     if (!q) {
@@ -117,14 +117,14 @@ const buscarClientes = async (req, res) => {
 
     try {
         const query = `
-            SELECT id_cliente, nombre_completo, telefono, email 
+            SELECT id_cliente, nombre_completo, telefono, celular, email, rfc, domicilio, colonia, cp, localidad, estado
             FROM clientes 
-            WHERE nombre_completo LIKE ? OR telefono LIKE ?
+            WHERE nombre_completo LIKE ? OR telefono LIKE ? OR celular LIKE ? OR rfc LIKE ?
             ORDER BY nombre_completo ASC
             LIMIT ? OFFSET ?`;
             
         const searchTerm = `%${q}%`;
-        const [clientes] = await pool.query(query, [searchTerm, searchTerm, limit, offset]);
+        const [clientes] = await pool.query(query, [searchTerm, searchTerm, searchTerm, searchTerm, limit, offset]);
         
         res.json({ success: true, data: clientes });
     } catch (error) {
@@ -254,17 +254,17 @@ const obtenerUltimaRX = async (req, res) => {
 // Actualizar datos personales de un cliente
 const actualizarCliente = async (req, res) => {
     const { id } = req.params;
-    const { nombre_completo, telefono, email, rfc, domicilio, colonia, cp, localidad, estado } = req.body;
+    const { nombre_completo, telefono, celular, email, rfc, domicilio, colonia, cp, localidad, estado } = req.body;
 
     try {
         const query = `
             UPDATE clientes 
-            SET nombre_completo = ?, telefono = ?, email = ?, rfc = ?, domicilio = ?, colonia = ?, cp = ?, localidad = ?, estado = ?
+            SET nombre_completo = ?, telefono = ?, celular = ?, email = ?, rfc = ?, domicilio = ?, colonia = ?, cp = ?, localidad = ?, estado = ?
             WHERE id_cliente = ?
         `;
 
         const [result] = await pool.query(query, [
-            nombre_completo, telefono, email, rfc, domicilio, colonia, cp, localidad, estado, id
+            nombre_completo, telefono || null, celular || null, email || null, rfc || null, domicilio || null, colonia || null, cp || null, localidad || null, estado || null, id
         ]);
 
         if (result.affectedRows === 0) {
@@ -282,6 +282,34 @@ const actualizarCliente = async (req, res) => {
     }
 };
 
+// Eliminar un cliente por ID
+const eliminarCliente = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const [result] = await pool.query('DELETE FROM clientes WHERE id_cliente = ?', [id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'Cliente no encontrado.' });
+        }
+
+        return res.json({ 
+            success: true, 
+            message: 'Cliente eliminado correctamente' 
+        });
+
+    } catch (error) {
+        console.error('Error MySQL al eliminar cliente:', error);
+        if (error.code === 'ER_ROW_IS_REFERENCED_2' || error.errno === 1451) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'No se puede eliminar el cliente porque tiene órdenes, recetas o facturas asociadas en el sistema.' 
+            });
+        }
+        return res.status(500).json({ success: false, message: 'Error interno al eliminar cliente.' });
+    }
+};
+
 module.exports = { 
     crearCliente, 
     obtenerHistorial, 
@@ -290,5 +318,6 @@ module.exports = {
     guardarNuevaRX, 
     actualizarRX, 
     obtenerUltimaRX,
-    actualizarCliente 
+    actualizarCliente,
+    eliminarCliente
 };

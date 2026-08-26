@@ -45,6 +45,9 @@ const obtenerOperadores = async (req, res) => {
         GROUP_CONCAT(DISTINCT r.descripcion) AS descripcion, 
         o.activo, 
         o.id_sucursal,
+        o.especialidad,
+        o.cedula,
+        o.universidad,
         IFNULL(s.nombre, CONCAT('Sucursal ', o.id_sucursal)) AS nombre_sucursal,
         GROUP_CONCAT(DISTINCT r.nombre_rol) AS roles_concatenados,
         GROUP_CONCAT(DISTINCT r.id_rol) AS roles_ids
@@ -115,6 +118,9 @@ const obtenerOperadorPorId = async (req, res) => {
         GROUP_CONCAT(DISTINCT r.descripcion) AS descripcion, 
         o.activo, 
         o.id_sucursal,
+        o.especialidad,
+        o.cedula,
+        o.universidad,
         GROUP_CONCAT(DISTINCT r.nombre_rol) AS roles_concatenados
       FROM operadores o
       LEFT JOIN operador_roles op_r ON o.id_operador = op_r.id_operador
@@ -140,7 +146,10 @@ const obtenerOperadorPorId = async (req, res) => {
 
 // Crear un nuevo operador con roles múltiples
 const crearOperador = async (req, res) => {
-  const { nombre_completo, usuario_login, password, id_rol, roles, id_sucursal, activo, descripcion } = req.body;
+  const { 
+    nombre_completo, usuario_login, password, id_rol, roles, id_sucursal, activo, descripcion,
+    especialidad, cedula, universidad 
+  } = req.body;
   const connection = await pool.getConnection();
 
   try {
@@ -156,9 +165,12 @@ const crearOperador = async (req, res) => {
     const isActivo = activo !== undefined ? (activo ? 1 : 0) : 1;
 
     const [result] = await connection.query(
-      `INSERT INTO operadores (nombre_completo, usuario_login, password_hash, id_sucursal, activo) 
-       VALUES (?, ?, ?, ?, ?)`,
-      [nombre_completo, usuario_login, password_hash, sucursalFija, isActivo]
+      `INSERT INTO operadores (nombre_completo, usuario_login, password_hash, id_sucursal, activo, especialidad, cedula, universidad) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nombre_completo, usuario_login, password_hash, sucursalFija, isActivo,
+        especialidad || null, cedula || null, universidad || null
+      ]
     );
     const id_operador = result.insertId;
 
@@ -192,7 +204,10 @@ const crearOperador = async (req, res) => {
 // Modificar datos generales de un operador
 const modificarOperador = async (req, res) => {
   const { id } = req.params;
-  const { nombre_completo, usuario_login, id_rol, roles, id_sucursal, activo, descripcion } = req.body;
+  const { 
+    nombre_completo, usuario_login, id_rol, roles, id_sucursal, activo, descripcion,
+    especialidad, cedula, universidad
+  } = req.body;
   const connection = await pool.getConnection();
 
   try {
@@ -205,6 +220,9 @@ const modificarOperador = async (req, res) => {
     if (usuario_login) { updates.push('usuario_login = ?'); params.push(usuario_login); }
     if (id_sucursal) { updates.push('id_sucursal = ?'); params.push(id_sucursal); }
     if (activo !== undefined) { updates.push('activo = ?'); params.push(activo ? 1 : 0); }
+    if (especialidad !== undefined) { updates.push('especialidad = ?'); params.push(especialidad || null); }
+    if (cedula !== undefined) { updates.push('cedula = ?'); params.push(cedula || null); }
+    if (universidad !== undefined) { updates.push('universidad = ?'); params.push(universidad || null); }
 
     if (updates.length > 0) {
       params.push(id);

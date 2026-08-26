@@ -20,6 +20,19 @@ const login = async (req, res) => {
             return res.status(401).json({ message: "Usuario no encontrado." });
         }
 
+        // 1.5 Verificar que la sucursal seleccionada esté activa
+        const [sucCheck] = await pool.query(
+            'SELECT id_sucursal, activo FROM sucursales WHERE id_sucursal = ?',
+            [sucursal_actual]
+        ).catch(async () => await pool.query(
+            'SELECT id_sucursal, activo FROM SUCURSALES WHERE id_sucursal = ?',
+            [sucursal_actual]
+        ));
+
+        if (sucCheck.length > 0 && !Boolean(sucCheck[0].activo)) {
+            return res.status(400).json({ message: "La sucursal seleccionada no se encuentra activa." });
+        }
+
         const user = users[0];
 
         // 2. Verificar la contraseña con Bcrypt

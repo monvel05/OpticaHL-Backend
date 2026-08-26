@@ -70,8 +70,8 @@ const crearArticulo = async (req, res) => {
         safeBase,
       ]);
 
-      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM SUCURSALES')
-        .catch(async () => await conexion.query('SELECT id_sucursal FROM sucursales'))
+      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM SUCURSALES WHERE activo = 1')
+        .catch(async () => await conexion.query('SELECT id_sucursal FROM sucursales WHERE activo = 1'))
         .catch(() => [[]]);
       const validSucIds = (dbSucursales && dbSucursales.length > 0)
         ? new Set(dbSucursales.map(s => String(s.id_sucursal)))
@@ -221,8 +221,8 @@ const actualizarArticulo = async (req, res) => {
         safeBase,
       ]);
 
-      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM SUCURSALES')
-        .catch(async () => await conexion.query('SELECT id_sucursal FROM sucursales'))
+      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM SUCURSALES WHERE activo = 1')
+        .catch(async () => await conexion.query('SELECT id_sucursal FROM sucursales WHERE activo = 1'))
         .catch(() => [[]]);
       const validSucIds = (dbSucursales && dbSucursales.length > 0)
         ? new Set(dbSucursales.map(s => String(s.id_sucursal)))

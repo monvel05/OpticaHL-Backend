@@ -34,4 +34,7 @@ router.post('/', clienteController.crearCliente);
 // ✏️ NUEVA: Actualizar datos personales del cliente (Soluciona el error 404 al presionar CAMBIAR)
 router.put('/:id', checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'CAJER@', 'FACTURADOR@', 'Optometrista', 'OPTOMETRISTA']), clienteController.actualizarCliente);
 
+// 🗑️ NUEVA: Eliminar cliente en modo edición
+router.delete('/:id', checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'CAJER@', 'FACTURADOR@', 'Optometrista', 'OPTOMETRISTA']), clienteController.eliminarCliente);
+
 module.exports = router;
