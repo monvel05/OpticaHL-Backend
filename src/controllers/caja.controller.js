@@ -217,22 +217,21 @@ const obtenerOrdenParaCobro = async (req, res) => {
 
 /**
  * @function procesarPago
- * @description Procesa pagos (Ingresos de órdenes) y egresos (gastos de caja)
+ * @description Procesa pagos (Ingresos de órdenes / Venta Exprés) y egresos (gastos de caja)
  */
 const procesarPago = async (req, res) => {
   const { folio, folio_orden, folioOrden, id_orden, monto, metodo_pago, id_sucursal, tipo_movimiento, concepto, id_gasto } = req.body;
   const tipoMov = (tipo_movimiento || 'INGRESO').toUpperCase();
+  const id_operador = req.user?.id || req.usuario?.id || 1;
+  const pagoIngresado = parseFloat(monto || 0);
 
-  // SI ES UN EGRESO / GASTO DE CAJA
+  if (pagoIngresado <= 0) {
+    return res.status(400).json({ mensaje: "El monto debe ser mayor a $0." });
+  }
+
+  // 1. SI ES UN EGRESO / GASTO DE CAJA
   if (tipoMov === 'EGRESO' || tipoMov === 'GASTO') {
     try {
-      const id_operador = req.user?.id || req.usuario?.id || 1;
-      const montoGasto = parseFloat(monto || 0);
-
-      if (montoGasto <= 0) {
-        return res.status(400).json({ mensaje: "El monto del gasto debe ser mayor a 0." });
-      }
-
       await pool.query(
         `INSERT INTO movimientos_caja 
          (id_sucursal, id_operador, folio_orden, id_gasto, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
@@ -243,7 +242,7 @@ const procesarPago = async (req, res) => {
           null, 
           id_gasto || 1, 
           (metodo_pago || 'EFECTIVO').toUpperCase(), 
-          montoGasto, 
+          pagoIngresado, 
           concepto || 'Gasto General'
         ]
       );
@@ -258,15 +257,42 @@ const procesarPago = async (req, res) => {
     }
   }
 
-  // SI ES UN INGRESO (PAGO DE PACIENTE POR ORDEN)
+  // 2. SI ES VENTA EXPRÉS / COBRO RÁPIDO (SIN FOLIO DE ORDEN)
   const busqueda = folio || folio_orden || folioOrden || id_orden || "";
   const busquedaLimpia = String(busqueda).trim();
 
   if (!busquedaLimpia) {
-    return res.status(400).json({ mensaje: "No se recibió el Folio/ID de la orden." });
+    try {
+      await pool.query(
+        `INSERT INTO movimientos_caja 
+         (id_sucursal, id_operador, folio_orden, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
+         VALUES (?, ?, NULL, 'INGRESO', ?, ?, NOW(), ?)`,
+        [
+          id_sucursal || "HL01", 
+          id_operador, 
+          (metodo_pago || 'EFECTIVO').toUpperCase(), 
+          pagoIngresado, 
+          concepto || 'COBRO RÁPIDO / MOSTRADOR'
+        ]
+      );
+
+      return res.status(200).json({
+        success: true,
+        mensaje: "Venta rápida registrada correctamente",
+        recibo: {
+          folio: 'VENTA_EXPRES',
+          monto_pagado: pagoIngresado,
+          saldo_restante: 0,
+          estatus: 'PAGADO'
+        }
+      });
+    } catch (error) {
+      console.error("Error al registrar venta exprés:", error);
+      return res.status(500).json({ mensaje: "Error interno al procesar la venta exprés." });
+    }
   }
 
-  const id_operador = req.user?.id || req.usuario?.id || 1;
+  // 3. SI ES UN INGRESO VINCULADO A UNA ORDEN DE CLIENTE
   const connection = await pool.getConnection();
 
   try {
@@ -297,7 +323,6 @@ const procesarPago = async (req, res) => {
     const anticipoActual = parseFloat(pagos[0].anticipo || 0);
     const total = parseFloat(orden.total || 0);
     const saldoActual = Math.max(0, total - anticipoActual);
-    const pagoIngresado = parseFloat(monto || 0);
 
     if (saldoActual <= 0) {
       throw new Error("Esta orden ya se encuentra liquidada completamente.");
@@ -310,8 +335,15 @@ const procesarPago = async (req, res) => {
     await connection.query(
       `INSERT INTO movimientos_caja 
        (id_sucursal, id_operador, folio_orden, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
-       VALUES (?, ?, ?, 'INGRESO', ?, ?, NOW(), 'Pago en caja')`,
-      [id_sucursal || "HL01", id_operador, folioReal, (metodo_pago || 'EFECTIVO').toUpperCase(), pagoIngresado]
+       VALUES (?, ?, ?, 'INGRESO', ?, ?, NOW(), ?)`,
+      [
+        id_sucursal || "HL01", 
+        id_operador, 
+        folioReal, 
+        (metodo_pago || 'EFECTIVO').toUpperCase(), 
+        pagoIngresado,
+        concepto || 'Pago en caja'
+      ]
     );
 
     const nuevoSaldo = Math.max(0, saldoActual - pagoIngresado);
@@ -632,11 +664,69 @@ const descargarTicketCortePDF = async (req, res) => {
     res.status(500).json({ mensaje: "Error al generar el PDF de corte de caja" });
   }
 };
+/**
+ * @function descargarTicketVentaExpresPDF
+ * @description Genera un ticket en PDF para Ventas Exprés / Cobro Rápido de mostrador
+ */
+const descargarTicketVentaExpresPDF = async (req, res) => {
+  const { concepto, monto, metodo_pago, fecha } = req.query;
+
+  const montoNum = parseFloat(monto || 0);
+  const fechaEmision = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
+
+  try {
+    // Documento de tamaño miniprinter (80mm = ~226pt de ancho)
+    const doc = new PDFDocument({ margin: 15, size: [226, 450] });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename=Ticket_Venta_Expres.pdf`);
+
+    doc.pipe(res);
+
+    // Encabezado
+    doc.fontSize(12).text("ÓPTICA HL", { align: "center" });
+    doc.fontSize(8).text("Ticket de Venta Mostrador", { align: "center" });
+    doc.fontSize(7).text("Sucursal: HL01 - Cosío Norte 214", { align: "center" });
+    doc.text("-----------------------------------------", { align: "center" });
+
+    // Información de venta
+    doc.fontSize(7);
+    doc.text(`Tipo: VENTA EXPRÉS`);
+    doc.text(`Fecha/Hora: ${fechaEmision}`);
+    doc.text(`Atendió: Cajero de Turno`);
+    doc.text("-----------------------------------------", { align: "center" });
+
+    // Detalle del producto / servicio
+    doc.fontSize(8).text("DETALLE DE COMPRA:", { underline: true });
+    doc.fontSize(7).text(`1x ${concepto || 'Artículo de Mostrador'}`);
+    doc.text(`   Monto: $${montoNum.toFixed(2)}`);
+
+    doc.text("-----------------------------------------", { align: "center" });
+
+    // Pago y totales
+    doc.fontSize(8).text("PAGO:", { underline: true });
+    doc.fontSize(7).text(`Forma de Pago: ${(metodo_pago || 'EFECTIVO').toUpperCase()}`);
+    doc.text("-----------------------------------------", { align: "center" });
+
+    doc.fontSize(9);
+    doc.text(`TOTAL PAGADO: $${montoNum.toFixed(2)}`, { align: "right" });
+
+    doc.text("-----------------------------------------", { align: "center" });
+    doc.fontSize(7).text("¡Gracias por su compra!", { align: "center" });
+    doc.text("Conserve este ticket para cualquier aclaración.", { align: "center" });
+
+    doc.end();
+  } catch (error) {
+    console.error("Error al generar PDF de venta exprés:", error);
+    res.status(500).json({ mensaje: "Error al generar el ticket" });
+  }
+};
 
 module.exports = {
   obtenerOrdenParaCobro,
   procesarPago,
   enviarReciboPago,
+  descargarTicketVentaExpresPDF,
   descargarTicketPDF,
   obtenerCorteCaja,
   descargarTicketCortePDF,

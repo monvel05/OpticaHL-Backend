@@ -320,6 +320,49 @@ const obtenerSucursales = async (req, res) => {
   }
 };
 
+// ==========================================
+// BÚSQUEDA DE PRODUCTOS PARA CAJA / MOSTRADOR
+// ==========================================
+const buscarProductosCaja = async (req, res) => {
+  const termino = req.query.search || req.query.q || '';
+
+  if (!termino || termino.trim() === '') {
+    return res.status(200).json([]);
+  }
+
+  try {
+    const filtro = `%${termino.trim()}%`;
+    const query = `
+      SELECT 
+        a.id_articulo AS id_inventario,
+        a.codigo AS codigo_barras,
+        a.nombre,
+        a.nombre AS descripcion,
+        a.precio_venta AS precio,
+        IFNULL(SUM(inv.stock_actual), 0) AS stock
+      FROM ARTICULOS a
+      LEFT JOIN INVENTARIO_SUCURSAL inv ON a.id_articulo = inv.id_articulo
+      WHERE a.activo = 1 
+        AND (a.codigo LIKE ? OR a.nombre LIKE ?)
+      GROUP BY a.id_articulo, a.codigo, a.nombre, a.precio_venta
+      LIMIT 15
+    `;
+
+    const [productos] = await pool.query(query, [filtro, filtro]);
+
+    const resultado = productos.map(p => ({
+      ...p,
+      precio: Number(p.precio) || 0,
+      stock: Number(p.stock) || 0
+    }));
+
+    res.status(200).json(resultado);
+  } catch (error) {
+    console.error("Error al buscar productos para caja:", error);
+    res.status(500).json({ success: false, message: "Error al consultar inventario." });
+  }
+};
+
 module.exports = {
   obtenerAlertasStock,
   actualizarStock,
@@ -328,4 +371,5 @@ module.exports = {
   consultarArmazones,
   obtenerInventarioGeneral,
   obtenerSucursales,
+  buscarProductosCaja,
 };

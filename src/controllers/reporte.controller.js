@@ -4,16 +4,13 @@ const pool = require("../config/db");
 const obtenerReporteStockCritico = async (req, res) => {
   try {
     const [rows] = await pool.query("CALL sp_ReporteStockCritico()");
-    // Al llamar un SP, MySQL devuelve un arreglo de arreglos. El índice [0] tiene los datos.
-    res.status(200).json({ success: true, data: rows[0] });
+    res.status(200).json({ success: true, data: rows[0] || [] });
   } catch (error) {
     console.error("Error en obtenerReporteStockCritico:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Error interno al generar reporte de stock",
-      });
+    res.status(500).json({
+      success: false,
+      message: "Error interno al generar reporte de stock",
+    });
   }
 };
 
@@ -23,27 +20,23 @@ const obtenerReporteProductividad = async (req, res) => {
     const { fechaInicio, fechaFin } = req.query;
 
     if (!fechaInicio || !fechaFin) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Las fechas 'fechaInicio' y 'fechaFin' son obligatorias.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Las fechas 'fechaInicio' y 'fechaFin' son obligatorias.",
+      });
     }
 
     const [rows] = await pool.query("CALL sp_ReporteProductividad(?, ?)", [
       fechaInicio,
       fechaFin,
     ]);
-    res.status(200).json({ success: true, data: rows[0] });
+    res.status(200).json({ success: true, data: rows[0] || [] });
   } catch (error) {
     console.error("Error en obtenerReporteProductividad:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Error interno al generar reporte de productividad",
-      });
+    res.status(500).json({
+      success: false,
+      message: "Error interno al generar reporte de productividad",
+    });
   }
 };
 
@@ -53,15 +46,12 @@ const obtenerReporteIngresosCaja = async (req, res) => {
     const { fechaInicio, fechaFin, idSucursal } = req.query;
 
     if (!fechaInicio || !fechaFin) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Las fechas 'fechaInicio' y 'fechaFin' son obligatorias.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Las fechas 'fechaInicio' y 'fechaFin' son obligatorias.",
+      });
     }
 
-    // Si no mandan idSucursal, lo pasamos como null para que el SP devuelva todo (Global)
     const sucursalFiltro = idSucursal ? idSucursal : null;
 
     const [rows] = await pool.query("CALL sp_ReporteIngresosCaja(?, ?, ?)", [
@@ -69,25 +59,20 @@ const obtenerReporteIngresosCaja = async (req, res) => {
       fechaFin,
       sucursalFiltro,
     ]);
-    res.status(200).json({ success: true, data: rows[0] });
+    res.status(200).json({ success: true, data: rows[0] || [] });
   } catch (error) {
     console.error("Error en obtenerReporteIngresosCaja:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Error interno al generar reporte de caja",
-      });
+    res.status(500).json({
+      success: false,
+      message: "Error interno al generar reporte de caja",
+    });
   }
 };
 
 /**
- *  Reporte de Ingresos por Método de Pago (Corte de Caja)
- * @description Muestra cuánto dinero entró hoy (o en una fecha específica) desglosado por método de pago.
- * @route GET /api/reportes/ingresos-metodo?fecha=YYYY-MM-DD&id_sucursal=1
+ * Reporte de Ingresos por Método de Pago (Corte de Caja)
  */
 const obtenerIngresosPorMetodo = async (req, res) => {
-  // Si no mandan fecha, usamos la fecha actual por defecto
   const fecha = req.query.fecha || new Date().toISOString().split("T")[0];
   const { id_sucursal } = req.query;
 
@@ -95,7 +80,7 @@ const obtenerIngresosPorMetodo = async (req, res) => {
     let query = `
       SELECT metodo_pago, 
              COUNT(id_movimiento) AS cantidad_transacciones, 
-             SUM(monto) AS total_ingresado
+             IFNULL(SUM(monto), 0) AS total_ingresado
       FROM movimientos_caja
       WHERE DATE(fecha_hora) = ? AND tipo_movimiento = 'ENTRADA'
     `;
@@ -109,21 +94,15 @@ const obtenerIngresosPorMetodo = async (req, res) => {
     query += ` GROUP BY metodo_pago ORDER BY total_ingresado DESC`;
 
     const [resultados] = await pool.query(query, params);
-    res
-      .status(200)
-      .json({ exito: true, fecha_corte: fecha, datos: resultados });
+    res.status(200).json({ exito: true, fecha_corte: fecha, datos: resultados });
   } catch (error) {
     console.error("Error en obtenerIngresosPorMetodo:", error);
-    res
-      .status(500)
-      .json({ exito: false, mensaje: "Error al generar reporte de ingresos." });
+    res.status(500).json({ exito: false, mensaje: "Error al generar reporte de ingresos." });
   }
 };
 
 /**
- *   Reporte de Antigüedad de Saldos (Cuentas por Cobrar Críticas)
- * @description Obtiene órdenes con saldo pendiente que tienen más de 30 días de antigüedad.
- * @route GET /api/reportes/antiguedad-saldos
+ * Reporte de Antigüedad de Saldos (Cuentas por Cobrar Críticas)
  */
 const obtenerAntiguedadSaldos = async (req, res) => {
   try {
@@ -137,7 +116,7 @@ const obtenerAntiguedadSaldos = async (req, res) => {
       LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
       WHERE o.estatus IN ('Con Anticipo', 'Pendiente')
         AND o.fecha_emision <= DATE_SUB(NOW(), INTERVAL 30 DAY)
-      GROUP BY o.folio_orden, c.id_cliente
+      GROUP BY o.folio_orden, o.fecha_emision, o.total, c.nombre_completo, c.telefono
       HAVING saldo_pendiente > 0
       ORDER BY dias_antiguedad DESC
     `;
@@ -146,19 +125,15 @@ const obtenerAntiguedadSaldos = async (req, res) => {
     res.status(200).json({ exito: true, datos: resultados });
   } catch (error) {
     console.error("Error en obtenerAntiguedadSaldos:", error);
-    res
-      .status(500)
-      .json({
-        exito: false,
-        mensaje: "Error al generar reporte de cartera vencida.",
-      });
+    res.status(500).json({
+      exito: false,
+      mensaje: "Error al generar reporte de cartera vencida.",
+    });
   }
 };
 
 /**
- *  CRM de Salud Visual (Pacientes para Recordatorio)
- * @description Encuentra pacientes cuya última visita/compra fue hace más de 12 meses.
- * @route GET /api/reportes/crm-recordatorios
+ * CRM de Salud Visual (Pacientes para Recordatorio)
  */
 const obtenerPacientesParaRecordatorio = async (req, res) => {
   try {
@@ -168,31 +143,25 @@ const obtenerPacientesParaRecordatorio = async (req, res) => {
              DATEDIFF(NOW(), MAX(o.fecha_emision)) AS dias_sin_venir
       FROM clientes c
       JOIN orden o ON c.id_cliente = o.id_cliente
-      GROUP BY c.id_cliente
+      GROUP BY c.id_cliente, c.nombre_completo, c.telefono, c.email
       HAVING ultima_visita <= DATE_SUB(NOW(), INTERVAL 12 MONTH)
       ORDER BY ultima_visita ASC
     `;
 
     const [resultados] = await pool.query(query);
-    res
-      .status(200)
-      .json({
-        exito: true,
-        total_pacientes: resultados.length,
-        datos: resultados,
-      });
+    res.status(200).json({
+      exito: true,
+      total_pacientes: resultados.length,
+      datos: resultados,
+    });
   } catch (error) {
     console.error("Error en obtenerPacientesParaRecordatorio:", error);
-    res
-      .status(500)
-      .json({ exito: false, mensaje: "Error al generar reporte de CRM." });
+    res.status(500).json({ exito: false, mensaje: "Error al generar reporte de CRM." });
   }
 };
 
 /**
- *  Rotación de Inventario (Artículos de Lento Movimiento)
- * @description Muestra armazones/artículos que tienen stock pero no se han vendido en los últimos 6 meses.
- * @route GET /api/reportes/inventario-lento?id_sucursal=1
+ * Rotación de Inventario (Artículos de Lento Movimiento)
  */
 const obtenerInventarioLentoMovimiento = async (req, res) => {
   const { id_sucursal } = req.query;
@@ -223,22 +192,18 @@ const obtenerInventarioLentoMovimiento = async (req, res) => {
     res.status(200).json({ exito: true, datos: resultados });
   } catch (error) {
     console.error("Error en obtenerInventarioLentoMovimiento:", error);
-    res
-      .status(500)
-      .json({
-        exito: false,
-        mensaje: "Error al generar reporte de inventario.",
-      });
+    res.status(500).json({
+      exito: false,
+      mensaje: "Error al generar reporte de inventario.",
+    });
   }
 };
 
 /**
- *  Productividad: Ticket Promedio y Exámenes por Operador
- * @description Mide la eficiencia de los vendedores/optometristas en un mes y año específico.
- * @route GET /api/reportes/productividad?mes=05&anio=2026
+ * Productividad: Ticket Promedio y Exámenes por Operador
  */
 const obtenerProductividadOperadores = async (req, res) => {
-  const mes = req.query.mes || new Date().getMonth() + 1; // Mes actual por defecto
+  const mes = req.query.mes || new Date().getMonth() + 1;
   const anio = req.query.anio || new Date().getFullYear();
 
   try {
@@ -254,28 +219,23 @@ const obtenerProductividadOperadores = async (req, res) => {
            AND YEAR(o.fecha_emision) = ?
            AND o.estatus != 'Cancelada'
       LEFT JOIN graduacion_orden g ON o.folio_orden = g.folio_orden
-      GROUP BY op.id_operador
+      GROUP BY op.id_operador, op.nombre_completo
       ORDER BY ingresos_generados DESC
     `;
 
     const [resultados] = await pool.query(query, [mes, anio]);
-    res
-      .status(200)
-      .json({ exito: true, periodo: `${mes}/${anio}`, datos: resultados });
+    res.status(200).json({ exito: true, periodo: `${mes}/${anio}`, datos: resultados });
   } catch (error) {
     console.error("Error en obtenerProductividadOperadores:", error);
-    res
-      .status(500)
-      .json({
-        exito: false,
-        mensaje: "Error al generar reporte de productividad.",
-      });
+    res.status(500).json({
+      exito: false,
+      mensaje: "Error al generar reporte de productividad.",
+    });
   }
 };
 
 /**
  * Reporte de Descuentos Mensuales 
- * @description Muestra las órdenes o facturas donde se aplicó un descuento en un mes específico.
  */
 const obtenerReporteDescuentos = async (req, res) => {
   const mes = req.query.mes || new Date().getMonth() + 1;
@@ -301,7 +261,6 @@ const obtenerReporteDescuentos = async (req, res) => {
 
 /**
  * Reporte Completo de Ventas 
- * @description Cruce de datos entre órdenes, clientes y movimientos de caja.
  */
 const obtenerReporteVentasCompleto = async (req, res) => {
   const { fechaInicio, fechaFin } = req.query;
@@ -320,7 +279,7 @@ const obtenerReporteVentasCompleto = async (req, res) => {
       query += ` WHERE DATE(o.fecha_emision) BETWEEN ? AND ? `;
       params.push(fechaInicio, fechaFin);
     }
-    query += ` GROUP BY o.folio_orden ORDER BY o.fecha_emision DESC `;
+    query += ` GROUP BY o.folio_orden, o.fecha_emision, c.nombre_completo, o.total, o.estatus ORDER BY o.fecha_emision DESC `;
 
     const [resultados] = await pool.query(query, params);
     res.status(200).json({ exito: true, datos: resultados });
@@ -330,21 +289,19 @@ const obtenerReporteVentasCompleto = async (req, res) => {
   }
 };
 
-
 /**
  * Dashboard DB: Obtener catálogo de sucursales
  */
 const obtenerSucursales = async (req, res) => {
   try {
-    let query = `SELECT id_sucursal, nombre FROM sucursales WHERE activo = 1 ORDER BY id_sucursal ASC`;
-    let [resultados] = await pool.query(query).catch(async () => {
-      // Fallback si la columna activo o nombre difiere
+    let [filas] = await pool.query(`SELECT id_sucursal, nombre FROM sucursales WHERE activo = 1 ORDER BY id_sucursal ASC`).catch(async () => {
       return await pool.query(`SELECT id_sucursal, nombre FROM SUCURSALES`).catch(async () => {
         return await pool.query(`SELECT id_sucursal, nombre_sucursal AS nombre FROM sucursal`);
       });
     });
 
-    const datosFormat = (resultados[0] || resultados).map((s) => ({
+    const arregloDatos = Array.isArray(filas) ? filas : (filas ? filas[0] : []);
+    const datosFormat = (arregloDatos || []).map((s) => ({
       id: s.id_sucursal,
       nombre: s.nombre || s.nombre_sucursal || `Sucursal ${s.id_sucursal}`
     }));
@@ -375,7 +332,6 @@ function construirFiltroFechaSQL(rangoTiempo, fechaInicio, fechaFin, campoFecha 
     condition = ` AND DATE(${campoFecha}) BETWEEN ? AND ? `;
     params.push(fechaInicio, fechaFin);
   } else {
-    // MENSUAL por defecto
     condition = ` AND DATE(${campoFecha}) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) `;
   }
 
@@ -409,7 +365,6 @@ const obtenerDistribucionMultisucursal = async (req, res) => {
     query += ` GROUP BY s.id_sucursal, s.nombre ORDER BY montoTotal DESC`;
 
     const [rows] = await pool.query(query, params);
-
     res.status(200).json({ exito: true, datos: rows });
   } catch (error) {
     console.error("Error en obtenerDistribucionMultisucursal:", error);
@@ -433,7 +388,7 @@ const obtenerTopProductosRotacion = async (req, res) => {
         a.categoria,
         IFNULL(SUM(dv.cantidad), 0) AS unidadesVendidas,
         IFNULL(SUM(dv.cantidad * dv.precio_unitario), 0) AS totalVentas,
-        IFNULL(inv.stock_actual, 0) AS stockActual
+        IFNULL(SUM(inv.stock_actual), 0) AS stockActual
       FROM articulos a
       JOIN detalle_venta dv ON a.id_articulo = dv.id_articulo
       JOIN orden o ON dv.folio_orden = o.folio_orden AND o.estatus != 'CANCELADA' ${dateFilter.condition}
@@ -446,7 +401,7 @@ const obtenerTopProductosRotacion = async (req, res) => {
       params.push(id_sucursal);
     }
 
-    query += ` GROUP BY a.id_articulo ORDER BY unidadesVendidas DESC LIMIT 10`;
+    query += ` GROUP BY a.id_articulo, a.codigo, a.nombre, a.categoria ORDER BY unidadesVendidas DESC LIMIT 10`;
 
     const [rows] = await pool.query(query, params);
     res.status(200).json({ exito: true, datos: rows });
@@ -490,7 +445,7 @@ const obtenerDashboardBajaRotacion = async (req, res) => {
       params.push(id_sucursal);
     }
 
-    query += ` GROUP BY a.id_articulo, inv.id_sucursal HAVING diasEstancado >= 60 ORDER BY diasEstancado DESC LIMIT 20`;
+    query += ` GROUP BY a.id_articulo, a.codigo, a.nombre, a.categoria, s.nombre, inv.id_sucursal, inv.stock_actual, a.precio_venta HAVING diasEstancado >= 60 ORDER BY diasEstancado DESC LIMIT 20`;
 
     const [rows] = await pool.query(query, params);
 
@@ -598,7 +553,7 @@ const obtenerDashboardProductividadPersonal = async (req, res) => {
       queryMostrador += ` AND op.id_sucursal = ? `;
       paramsM.push(id_sucursal);
     }
-    queryMostrador += ` GROUP BY op.id_operador ORDER BY ventasCerradasMonto DESC `;
+    queryMostrador += ` GROUP BY op.id_operador, op.nombre_completo, s.nombre, op.id_sucursal ORDER BY ventasCerradasMonto DESC `;
 
     const [mostrador] = await pool.query(queryMostrador, paramsM);
 
@@ -626,7 +581,7 @@ const obtenerDashboardProductividadPersonal = async (req, res) => {
       queryOpto += ` AND op.id_sucursal = ? `;
       paramsO.push(id_sucursal);
     }
-    queryOpto += ` GROUP BY op.id_operador ORDER BY refraccionesCompletadas DESC `;
+    queryOpto += ` GROUP BY op.id_operador, op.nombre_completo, s.nombre, op.id_sucursal ORDER BY refraccionesCompletadas DESC `;
 
     const [optometristas] = await pool.query(queryOpto, paramsO);
 
