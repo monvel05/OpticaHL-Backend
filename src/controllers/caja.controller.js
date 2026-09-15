@@ -220,7 +220,20 @@ const obtenerOrdenParaCobro = async (req, res) => {
  * @description Procesa pagos (Ingresos de órdenes / Venta Exprés) y egresos (gastos de caja)
  */
 const procesarPago = async (req, res) => {
-  const { folio, folio_orden, folioOrden, id_orden, monto, metodo_pago, id_sucursal, tipo_movimiento, concepto, id_gasto } = req.body;
+  const { 
+    folio, 
+    folio_orden, 
+    folioOrden, 
+    id_orden, 
+    monto, 
+    metodo_pago, 
+    id_sucursal, 
+    tipo_movimiento, 
+    concepto, 
+    id_gasto,
+    items // Arreglo de artículos enviado desde el frontend
+  } = req.body;
+
   const tipoMov = (tipo_movimiento || 'INGRESO').toUpperCase();
   const id_operador = req.user?.id || req.usuario?.id || 1;
   const pagoIngresado = parseFloat(monto || 0);
@@ -262,8 +275,12 @@ const procesarPago = async (req, res) => {
   const busquedaLimpia = String(busqueda).trim();
 
   if (!busquedaLimpia) {
+    const connection = await pool.getConnection();
     try {
-      await pool.query(
+      await connection.beginTransaction();
+
+      // a) Insertar el movimiento en caja
+      await connection.query(
         `INSERT INTO movimientos_caja 
          (id_sucursal, id_operador, folio_orden, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
          VALUES (?, ?, NULL, 'INGRESO', ?, ?, NOW(), ?)`,
@@ -276,9 +293,45 @@ const procesarPago = async (req, res) => {
         ]
       );
 
+      // b) Descontar stock_actual de la tabla inventario_sucursal
+      if (Array.isArray(items) && items.length > 0) {
+        const sucursalActual = id_sucursal || "HL01";
+
+        for (const item of items) {
+          const cant = parseInt(item.cantidad || 1, 10);
+          const idArt = item.id_articulo || item.id_producto || item.id;
+
+          if (idArt) {
+            try {
+              // Descontamos directamente de inventario_sucursal usando stock_actual
+              const [resultado] = await connection.query(
+                `UPDATE inventario_sucursal 
+                 SET stock_actual = GREATEST(0, stock_actual - ?) 
+                 WHERE id_articulo = ? AND id_sucursal = ?`,
+                [cant, idArt, sucursalActual]
+              );
+
+              // Respaldo: Si no coincide la sucursal exacta, actualiza por id_articulo
+              if (resultado.affectedRows === 0) {
+                await connection.query(
+                  `UPDATE inventario_sucursal 
+                   SET stock_actual = GREATEST(0, stock_actual - ?) 
+                   WHERE id_articulo = ?`,
+                  [cant, idArt]
+                );
+              }
+            } catch (errStock) {
+              console.error(`❌ Error descontando stock para id_articulo ${idArt}:`, errStock.message);
+            }
+          }
+        }
+      }
+
+      await connection.commit();
+
       return res.status(200).json({
         success: true,
-        mensaje: "Venta rápida registrada correctamente",
+        mensaje: "Venta rápida registrada correctamente y stock actualizado",
         recibo: {
           folio: 'VENTA_EXPRES',
           monto_pagado: pagoIngresado,
@@ -287,8 +340,11 @@ const procesarPago = async (req, res) => {
         }
       });
     } catch (error) {
+      await connection.rollback();
       console.error("Error al registrar venta exprés:", error);
       return res.status(500).json({ mensaje: "Error interno al procesar la venta exprés." });
+    } finally {
+      connection.release();
     }
   }
 
@@ -341,7 +397,7 @@ const procesarPago = async (req, res) => {
         id_operador, 
         folioReal, 
         (metodo_pago || 'EFECTIVO').toUpperCase(), 
-        pagoIngresado,
+        pagoIngresado, 
         concepto || 'Pago en caja'
       ]
     );
@@ -664,6 +720,7 @@ const descargarTicketCortePDF = async (req, res) => {
     res.status(500).json({ mensaje: "Error al generar el PDF de corte de caja" });
   }
 };
+
 /**
  * @function descargarTicketVentaExpresPDF
  * @description Genera un ticket en PDF para Ventas Exprés / Cobro Rápido de mostrador
@@ -675,7 +732,6 @@ const descargarTicketVentaExpresPDF = async (req, res) => {
   const fechaEmision = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
 
   try {
-    // Documento de tamaño miniprinter (80mm = ~226pt de ancho)
     const doc = new PDFDocument({ margin: 15, size: [226, 450] });
 
     res.setHeader("Content-Type", "application/pdf");
@@ -683,27 +739,23 @@ const descargarTicketVentaExpresPDF = async (req, res) => {
 
     doc.pipe(res);
 
-    // Encabezado
     doc.fontSize(12).text("ÓPTICA HL", { align: "center" });
     doc.fontSize(8).text("Ticket de Venta Mostrador", { align: "center" });
     doc.fontSize(7).text("Sucursal: HL01 - Cosío Norte 214", { align: "center" });
     doc.text("-----------------------------------------", { align: "center" });
 
-    // Información de venta
     doc.fontSize(7);
     doc.text(`Tipo: VENTA EXPRÉS`);
     doc.text(`Fecha/Hora: ${fechaEmision}`);
     doc.text(`Atendió: Cajero de Turno`);
     doc.text("-----------------------------------------", { align: "center" });
 
-    // Detalle del producto / servicio
     doc.fontSize(8).text("DETALLE DE COMPRA:", { underline: true });
     doc.fontSize(7).text(`1x ${concepto || 'Artículo de Mostrador'}`);
     doc.text(`   Monto: $${montoNum.toFixed(2)}`);
 
     doc.text("-----------------------------------------", { align: "center" });
 
-    // Pago y totales
     doc.fontSize(8).text("PAGO:", { underline: true });
     doc.fontSize(7).text(`Forma de Pago: ${(metodo_pago || 'EFECTIVO').toUpperCase()}`);
     doc.text("-----------------------------------------", { align: "center" });
