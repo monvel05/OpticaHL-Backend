@@ -613,6 +613,8 @@ const obtenerCorteCaja = async (req, res) => {
  * @description Genera el reporte PDF y MARCA los movimientos como cortados en la BD
  */
 const descargarTicketCortePDF = async (req, res) => {
+  const { operador } = req.query; // <-- Recibimos el nombre del operador
+
   try {
     const [movimientos] = await pool.query(`
       SELECT m.* FROM movimientos_caja m
@@ -652,9 +654,11 @@ const descargarTicketCortePDF = async (req, res) => {
 
     doc.pipe(res);
 
+    // 📄 ENCABEZADO CON NOMBRE DE QUIEN REALIZÓ EL CORTE
     doc.fillColor("#2c3e50").fontSize(22).text("ÓPTICA HL", { align: "center" });
     doc.fontSize(14).text("REPORTE OFICIAL DE CORTE DE CAJA", { align: "center" });
     doc.fillColor("#7f8c8d").fontSize(9).text(`Fecha: ${new Date().toLocaleDateString()}  |  Hora: ${new Date().toLocaleTimeString()}`, { align: "center" });
+    doc.fillColor("#2c3e50").fontSize(10).text(`Realizado por: ${operador || 'Cajero de Turno'}`, { align: "center" }); // <-- AQUÍ SE IMPRIME EL NOMBRE
     doc.moveDown(1.5);
 
     doc.moveTo(40, doc.y).lineTo(572, doc.y).strokeColor("#34495e").lineWidth(1.5).stroke();
