@@ -138,8 +138,8 @@ const trasladarStock = async (req, res) => {
 
     // 3. Registrar el movimiento en la auditoría/bitácora
     const queryAudit = `
-            INSERT INTO audit_logs (id_operador, accion, modulo, detalles)
-            VALUES (?, 'TRASLADO_STOCK', 'INVENTARIO', ?)
+            INSERT INTO audit_logs (id_usuario, accion, ruta_afectada, detalles)
+            VALUES (?, 'TRASLADO_STOCK', '/api/inventario/traslado', ?)
         `;
     const detalles = `Traslado de ${cantidad} unidades del articulo ID ${id_articulo} de sucursal ${id_sucursal_origen} a ${id_sucursal_destino}`;
     await conexion.execute(queryAudit, [

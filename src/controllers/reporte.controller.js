@@ -82,7 +82,7 @@ const obtenerIngresosPorMetodo = async (req, res) => {
              COUNT(id_movimiento) AS cantidad_transacciones, 
              IFNULL(SUM(monto), 0) AS total_ingresado
       FROM movimientos_caja
-      WHERE DATE(fecha_hora) = ? AND tipo_movimiento = 'ENTRADA'
+      WHERE DATE(fecha_hora) = ? AND (tipo_movimiento = 'ENTRADA' OR tipo_movimiento = 'INGRESO')
     `;
     const params = [fecha];
 
@@ -113,7 +113,7 @@ const obtenerAntiguedadSaldos = async (req, res) => {
              DATEDIFF(NOW(), o.fecha_emision) AS dias_antiguedad
       FROM orden o
       JOIN clientes c ON o.id_cliente = c.id_cliente
-      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
+      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento IN ('ENTRADA', 'INGRESO')
       WHERE o.estatus IN ('Con Anticipo', 'Pendiente')
         AND o.fecha_emision <= DATE_SUB(NOW(), INTERVAL 30 DAY)
       GROUP BY o.folio_orden, o.fecha_emision, o.total, c.nombre_completo, c.telefono
@@ -272,7 +272,7 @@ const obtenerReporteVentasCompleto = async (req, res) => {
              IFNULL(SUM(m.monto), 0) AS total_pagado
       FROM orden o
       JOIN clientes c ON o.id_cliente = c.id_cliente
-      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento = 'ENTRADA'
+      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento IN ('ENTRADA', 'INGRESO')
     `;
     const params = [];
     if (fechaInicio && fechaFin) {
