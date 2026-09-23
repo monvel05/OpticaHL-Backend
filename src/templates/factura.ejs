@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #333; }
+        .header { text-align: center; border-bottom: 2px solid #0056b3; padding-bottom: 10px; }
+        .datos-fiscales { margin-top: 20px; width: 100%; border-collapse: collapse; }
+        .datos-fiscales td { padding: 5px; }
+        .tabla-conceptos { width: 100%; margin-top: 20px; border-collapse: collapse; }
+        .tabla-conceptos th, .tabla-conceptos td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        .tabla-conceptos th { background-color: #f4f4f4; }
+        .totales { margin-top: 20px; text-align: right; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>ÓPTICA HL</h1>
+        <p>Factura Electrónica (CFDI 4.0)</p>
+        <p>Folio Fiscal (UUID): <%= uuid %></p>
+    </div>
+
+    <table class="datos-fiscales">
+        <tr>
+            <td><b>Receptor:</b> <%= cliente.nombre %></td>
+            <td><b>RFC:</b> <%= cliente.rfc %></td>
+        </tr>
+        <tr>
+            <td><b>Uso CFDI:</b> <%= cliente.uso_cfdi %></td>
+            <td><b>Régimen:</b> <%= cliente.regimen %></td>
+        </tr>
+    </table>
+
+    <table class="tabla-conceptos">
+        <thead>
+            <tr>
+                <th>Cant.</th>
+                <th>Descripción</th>
+                <th>P. Unitario</th>
+                <th>Importe</th>
+            </tr>
+        </thead>
+        <tbody>
+            <% conceptos.forEach(function(item) { %>
+            <tr>
+                <td><%= item.cantidad %></td>
+                <td><%= item.descripcion %></td>
+                <td>$<%= item.precio_unitario %></td>
+                <td>$<%= item.importe %></td>
+            </tr>
+            <% }); %>
+        </tbody>
+    </table>
+
+    <div class="totales">
+        <p><b>Subtotal:</b> $<%= totales.subtotal %></p>
+        <p><b>IVA (16%):</b> $<%= totales.iva %></p>
+        <p><b>Total:</b> $<%= totales.total %></p>
+    </div>
+</body>
+</html>

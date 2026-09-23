@@ -1,21 +1,40 @@
 const express = require('express');
-const router = express.Router();
+const router = express.Router(); 
 const clienteController = require('../controllers/cliente.controller');
-const verifyToken = require('../middlewares/auth.middleware');
-const checkRole = require('../middlewares/rol.middleware');
+const { verifyToken } = require('../middlewares/auth.middleware');
+const { checkRole } = require('../middlewares/rol.middleware');
 
+// 🔐 1. Autenticación global: Todas las rutas exigen un token válido y vivo
 router.use(verifyToken);
 
-// Búsqueda de clientes (Permitido para Mostrador, Cajero, Facturador y Admin)
-router.get('/buscar', checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'CAJER@', 'FACTURADOR@']), clienteController.buscarClientes);
+// ==========================================
+// 🔎 RUTAS DE LECTURA (GET)
+// ==========================================
 
-// Alta de clientes (Solo Administrador y Mostrador) 
-router.post('/', checkRole(['ADMINISTRADOR', 'MOSTRADOR']), clienteController.crearCliente);
+// Búsqueda en tiempo real (Buscador del Mostrador y Gabinete)
+router.get('/buscar', checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'CAJER@', 'FACTURADOR@', 'Optometrista', 'OPTOMETRISTA']), clienteController.buscarClientes);
 
-// Obtener historial del cliente (Para Mostrador y Admin)
-router.get('/:id/historial', checkRole(['ADMINISTRADOR', 'MOSTRADOR']), clienteController.obtenerHistorial);
+// Obtener historial clínico del paciente
+router.get('/:id/historial', checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'Optometrista', 'OPTOMETRISTA']), clienteController.obtenerHistorial);
 
-// Guardar nueva RX (Solo para Mostrador y Admin)
-router.post('/:id/rx',  checkRole(['ADMINISTRADOR', 'MOSTRADOR']), clienteController.guardarNuevaRX);
+// 🎯 CORREGIDO: Removido el prefijo innecesario para coincidir exactamente con Angular (/api/clientes/4/ultima-rx)
+router.get('/:id/ultima-rx', checkRole(['ADMINISTRADOR', 'Optometrista', 'OPTOMETRISTA']), clienteController.obtenerUltimaRX);
+
+
+// ==========================================
+// 📥 RUTAS DE ESCRITURA Y ACTUALIZACIÓN (POST / PUT)
+// ==========================================
+
+// Guardar nueva RX / refracción
+router.post('/:id/rx', checkRole(['ADMINISTRADOR', 'Optometrista', 'OPTOMETRISTA']), clienteController.guardarNuevaRX);
+
+// Alta rápida de clientes desde el mostrador
+router.post('/', clienteController.crearCliente);
+
+// ✏️ NUEVA: Actualizar datos personales del cliente (Soluciona el error 404 al presionar CAMBIAR)
+router.put('/:id', checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'CAJER@', 'FACTURADOR@', 'Optometrista', 'OPTOMETRISTA']), clienteController.actualizarCliente);
+
+// 🗑️ NUEVA: Eliminar cliente en modo edición
+router.delete('/:id', checkRole(['ADMINISTRADOR', 'MOSTRADOR', 'CAJER@', 'FACTURADOR@', 'Optometrista', 'OPTOMETRISTA']), clienteController.eliminarCliente);
 
 module.exports = router;

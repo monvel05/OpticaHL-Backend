@@ -1,9 +1,8 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const db = require('../config/db'); // Configuración de conexión a la BD
+const pool = require('../config/db'); 
 
 const login = async (req, res) => {
-    // Ionic envía usuario, password y la sucursal que el empleado seleccionó al abrir la app
     const { usuario, password, sucursal_actual } = req.body;
 
     if (!usuario || !password || !sucursal_actual) {
@@ -11,47 +10,66 @@ const login = async (req, res) => {
     }
 
     try {
-        // 1. Buscar al operador activo
-        const [users] = await db.query(
+        // 1. Buscar al operador activo por su login
+        const [users] = await pool.query(
             'SELECT * FROM OPERADORES WHERE usuario_login = ? AND activo = 1', 
             [usuario]
         );
 
         if (users.length === 0) {
-            return res.status(401).json({ message: "Usuario no encontrado o inactivo." });
+            return res.status(401).json({ message: "Usuario no encontrado." });
+        }
+
+        // 1.5 Verificar que la sucursal seleccionada esté activa
+        const [sucCheck] = await pool.query(
+            'SELECT id_sucursal, activo FROM sucursales WHERE id_sucursal = ?',
+            [sucursal_actual]
+        ).catch(async () => await pool.query(
+            'SELECT id_sucursal, activo FROM SUCURSALES WHERE id_sucursal = ?',
+            [sucursal_actual]
+        ));
+
+        if (sucCheck.length > 0 && !Boolean(sucCheck[0].activo)) {
+            return res.status(400).json({ message: "La sucursal seleccionada no se encuentra activa." });
         }
 
         const user = users[0];
 
-        // 2. Validar contraseña hasheada
+        // 2. Verificar la contraseña con Bcrypt
         const validPass = await bcrypt.compare(password, user.password_hash);
+        
         if (!validPass) {
+            console.log('❌ Bcrypt sigue diciendo que no coincide');
             return res.status(401).json({ message: "Contraseña incorrecta." });
         }
 
-        // 3. Obtener el arreglo de roles del usuario (Múltiples permisos)
-        const [rolesData] = await db.query(`
-            SELECT r.nombre_rol 
+        // 3. Obtener los roles asignados desde la tabla intermedia
+        const [rolesData] = await pool.query(`
+            SELECT r.nombre_rol, r.NOMBRE_ROL 
             FROM OPERADOR_ROLES orol
             JOIN ROLES r ON orol.id_rol = r.id_rol
             WHERE orol.id_operador = ?
         `, [user.id_operador]);
 
-        const userRoles = rolesData.map(r => r.nombre_rol);
+        // Mapeo seguro: intentamos leer en minúsculas o mayúsculas por compatibilidad de motores
+        let userRoles = rolesData.map(r => r.nombre_rol || r.NOMBRE_ROL).filter(Boolean);
 
-        // 4. Construir y firmar el JWT
+        // 🚨 EL SALVAVIDAS CRUCIAL: Si el arreglo viene vacío [], le asignamos 'MOSTRADOR' por defecto
+        if (!userRoles || userRoles.length === 0) {
+            console.log(`⚠️ Advertencia: El operador [${user.usuario_login}] no tiene roles asignados en la DB. Asignando 'MOSTRADOR' por defecto.`);
+            userRoles = ['MOSTRADOR']; 
+        }
+
+        // 4. Armar el Payload del Token con los roles asegurados
         const payload = { 
             id_operador: user.id_operador,
             nombre: user.nombre_completo,
-            roles: userRoles, 
-            sucursal: sucursal_actual // Asignamos la sucursal de la sesión actual
+            roles: userRoles, // 👈 ¡Ya nunca más viajará vacío!
+            sucursal: sucursal_actual 
         };
 
-        const token = jwt.sign(
-            payload, 
-            process.env.JWT_SECRET, // Debe estar en el .env
-            { expiresIn: '12h' } // Duración del turno
-        );
+        // 5. Firmar el JWT
+        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '12h' });
 
         res.status(200).json({
             message: "Login exitoso",
@@ -61,7 +79,7 @@ const login = async (req, res) => {
 
     } catch (error) {
         console.error("Error en login:", error);
-        res.status(500).json({ message: "Error interno del servidor." });
+        res.status(500).json({ message: "Error interno." });
     }
 };
 
