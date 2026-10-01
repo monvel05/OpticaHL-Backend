@@ -27,4 +27,10 @@ jobs:
             PUPPETEER_SKIP_DOWNLOAD=true npm install --omit=dev
             pm2 restart optica-backend --update-env
             pm2 save
-            curl -f http://localhost:3000/api/health || exit 1
+            # Espera activa y verificacion con reintentos (max 10s)
+            sleep 3
+            curl --retry 5 --retry-connrefused --retry-delay 2 -f http://localhost:3000/api/health || {
+              echo "El servidor falló al iniciar. Mostrando últimos logs de PM2:"
+              pm2 logs optica-backend --lines 30 --nostream
+              exit 1
+            }
