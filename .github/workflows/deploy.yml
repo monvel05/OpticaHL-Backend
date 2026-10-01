@@ -1,0 +1,27 @@
+name: CI/CD Backend Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Despliegue en EC2 Ubuntu
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Actualizar y Reiniciar Backend vía SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/opticahl-backend
+            git pull origin main
+            PUPPETEER_SKIP_DOWNLOAD=true npm install --omit=dev
+            pm2 restart optica-backend --update-env
+            pm2 save
+            curl -f http://localhost:3000/api/health || exit 1
