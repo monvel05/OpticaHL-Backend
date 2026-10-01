@@ -10,6 +10,7 @@ jobs:
   deploy:
     name: Despliegue en EC2 Ubuntu
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Actualizar y Reiniciar Backend vía SSH
@@ -18,6 +19,8 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 40s
+          command_timeout: 3m
           script: |
             cd /home/ubuntu/opticahl-backend
             git pull origin main
