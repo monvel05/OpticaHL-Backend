@@ -1,5 +1,6 @@
 // src/controllers/orden.controller.js
 const pool = require('../config/db');
+const PDFDocument = require('pdfkit');
 
 // Crear Orden de venta
 const crearOrden = async (req, res) => {
@@ -8,7 +9,7 @@ const crearOrden = async (req, res) => {
   console.log("=========================================");
 
   const { id_cliente, id_sucursal, total } = req.body;
-  const id_operador = req.usuario?.id || req.user?.id || 1; 
+  const id_operador = req.usuario?.id || req.user?.id || 1;
 
   let listaArticulos = null;
   for (let key in req.body) {
@@ -21,20 +22,20 @@ const crearOrden = async (req, res) => {
 
   if (!listaArticulos || !Array.isArray(listaArticulos)) {
     console.error("❌ ERROR: No se encontró ningún arreglo de productos en req.body");
-    return res.status(400).json({ 
-      exito: false, 
-      mensaje: 'El backend no recibió una lista de productos válida. Revisa la terminal.' 
+    return res.status(400).json({
+      exito: false,
+      mensaje: 'El backend no recibió una lista de productos válida. Revisa la terminal.'
     });
   }
 
-  const safeIdCliente = id_cliente || null; 
+  const safeIdCliente = id_cliente || null;
   const connection = await pool.getConnection();
 
   try {
     await connection.beginTransaction();
 
-    const folio_orden = `ORD-${id_sucursal || 'HL01'}-${Date.now()}`; 
-    
+    const folio_orden = `ORD-${id_sucursal || 'HL01'}-${Date.now()}`;
+
     await connection.query(
       `INSERT INTO orden (folio_orden, id_sucursal, fecha_emision, id_cliente, id_operador, total, estatus) 
        VALUES (?, ?, NOW(), ?, ?, ?, 'PENDIENTE')`,
@@ -74,11 +75,9 @@ const crearOrden = async (req, res) => {
 
 // Obtener Órdenes (General y por Folio Individual)
 const obtenerOrdenes = async (req, res) => {
-  // 🎯 Detectamos si el folio viene en la URL como /:id
-  const { id } = req.params; 
+  const { id } = req.params;
   const { fecha_inicio, fecha_fin, estatus, id_cliente } = req.query;
 
-  // Si viene un ID/Folio en los parámetros, buscamos solo esa orden con sus detalles
   if (id) {
     try {
       const queryOrden = `
@@ -87,21 +86,19 @@ const obtenerOrdenes = async (req, res) => {
         FROM orden o 
         LEFT JOIN clientes c ON o.id_cliente = c.id_cliente
         WHERE o.folio_orden = ?`;
-      
+
       const [ordenRows] = await pool.query(queryOrden, [id]);
 
       if (ordenRows.length === 0) {
         return res.status(404).json({ exito: false, mensaje: 'Orden no encontrada.' });
       }
 
-      // Opcional: También traemos los artículos de esa orden para mostrarlos en la caja
       const queryDetalles = `
         SELECT dv.id_articulo, dv.cantidad, dv.precio_unitario
         FROM detalle_venta dv
         WHERE dv.folio_orden = ?`;
       const [detalles] = await pool.query(queryDetalles, [id]);
 
-      // Unimos la orden con sus productos en la respuesta
       const ordenCompleta = { ...ordenRows[0], articulos: detalles };
 
       return res.status(200).json({ exito: true, datos: ordenCompleta });
@@ -111,7 +108,6 @@ const obtenerOrdenes = async (req, res) => {
     }
   }
 
-  // SI NO VIENE ID, BUSCAMOS TODAS NORMALMENTE POR FILTROS
   let query = `SELECT o.folio_orden AS folio, o.fecha_emision, o.total, o.estatus, 
                       c.nombre_completo AS paciente_nombre, c.telefono, c.celular, c.email 
                FROM orden o LEFT JOIN clientes c ON o.id_cliente = c.id_cliente`;
@@ -141,8 +137,8 @@ const obtenerOrdenes = async (req, res) => {
 
 // Modificar Orden
 const modificarOrden = async (req, res) => {
-  const folio = req.params.id; 
-  const { estatus } = req.body; 
+  const folio = req.params.id;
+  const { estatus } = req.body;
 
   try {
     await pool.query(
@@ -177,7 +173,7 @@ const registrarPago = async (req, res) => {
       [folio]
     );
     const [orden] = await connection.query(`SELECT total FROM orden WHERE folio_orden = ?`, [folio]);
-    
+
     if (pagos[0].totalPagado >= orden[0].total) {
       await connection.query(`UPDATE orden SET estatus = 'PAGADO' WHERE folio_orden = ?`, [folio]);
     } else {
@@ -199,7 +195,7 @@ const registrarPago = async (req, res) => {
 const cancelarOrden = async (req, res) => {
   const folio = req.params.id;
   const usuarioId = req.usuario?.id || req.user?.id || 1;
-  const { id_sucursal } = req.body; 
+  const { id_sucursal } = req.body;
   const connection = await pool.getConnection();
 
   try {
@@ -259,7 +255,7 @@ const obtenerCuentasPorCobrar = async (req, res) => {
       HAVING saldo_pendiente > 0
       ORDER BY o.fecha_emision ASC
     `;
-    
+
     const [cuentas] = await pool.query(query);
     res.status(200).json({ exito: true, datos: cuentas });
   } catch (error) {
@@ -268,11 +264,158 @@ const obtenerCuentasPorCobrar = async (req, res) => {
   }
 };
 
-module.exports = { 
-  crearOrden, 
-  obtenerOrdenes, 
-  modificarOrden, 
-  registrarPago, 
-  cancelarOrden, 
-  obtenerCuentasPorCobrar 
+/**
+ * @function generarPDFNotaVenta
+ * @description Genera el PDF estilizado de la Nota de Venta / Orden de Trabajo
+ */
+const generarPDFNotaVenta = async (req, res) => {
+  const paramFolio = req.params.folio || req.params.id;
+  const folioReal = paramFolio ? String(paramFolio).trim() : '';
+
+  try {
+    // 1. Obtener los datos principales de la orden
+    const [ordenes] = await pool.query(
+      `SELECT o.folio_orden, o.fecha_emision, o.total, o.id_operador,
+              COALESCE(c.nombre_completo, 'Cliente General') AS cliente_nombre
+       FROM orden o
+       LEFT JOIN clientes c ON o.id_cliente = c.id_cliente
+       WHERE TRIM(o.folio_orden) = ?`,
+      [folioReal]
+    );
+
+    if (ordenes.length === 0) {
+      return res.status(404).json({ exito: false, mensaje: 'Orden no encontrada.' });
+    }
+
+    const orden = ordenes[0];
+
+    // 2. Determinar quién atendió (Consulta directa a la tabla 'operadores')
+    let nombreAtendio = req.query.operador ? decodeURIComponent(req.query.operador).trim() : '';
+
+    if (!nombreAtendio || nombreAtendio.toLowerCase() === 'mostrador' || nombreAtendio === 'undefined') {
+      if (orden.id_operador) {
+        try {
+          // Consulta exacta a la tabla operadores usando id_operador / id
+
+          const [operadores] = await pool.query(
+            `SELECT nombre_completo FROM operadores WHERE id_operador = ?`,
+            [orden.id_operador]
+          );
+
+          if (operadores.length > 0 && operadores[0].nombre_completo) {
+            nombreAtendio = operadores[0].nombre_completo;
+          }
+        } catch (dbErr) {
+          console.warn("⚠️ No se pudo consultar el nombre del operador en BD:", dbErr.message);
+        }
+      }
+    }
+
+    // Valor por defecto si no se encuentra registrado el id
+    if (!nombreAtendio) {
+      nombreAtendio = 'Mostrador';
+    }
+
+    // 3. Obtener los productos de la orden
+    const [articulos] = await pool.query(
+      `SELECT dv.cantidad, dv.precio_unitario, (dv.cantidad * dv.precio_unitario) AS subtotal,
+              COALESCE(a.nombre, 'Artículo de Óptica') AS producto_nombre
+       FROM detalle_venta dv
+       LEFT JOIN articulos a ON dv.id_articulo = a.id_articulo
+       WHERE TRIM(dv.folio_orden) = ?`,
+      [folioReal]
+    );
+
+    // 4. Configurar el PDF (Tamaño ticket)
+    const doc = new PDFDocument({ margin: 15, size: [280, 470] });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename=Nota_Venta_${folioReal}.pdf`);
+
+    doc.pipe(res);
+
+    // Encabezado principal
+    doc.fontSize(16).font("Helvetica-Bold").text("ÓPTICA HL", { align: "center" });
+    doc.moveDown(0.2);
+    doc.fontSize(9).font("Helvetica").text("Nota de Venta / Orden de Trabajo", { align: "center" });
+
+    // Folio y Fecha
+    doc.moveDown(0.2);
+    doc.fontSize(9).font("Helvetica-Bold").text(`Folio: ${orden.folio_orden}`, { align: "center" });
+
+    const fechaObj = new Date(orden.fecha_emision);
+    const fechaFormateada = `${fechaObj.getDate()}/${fechaObj.getMonth() + 1}/${fechaObj.getFullYear()}`;
+    doc.fontSize(8).font("Helvetica").text(`Fecha: ${fechaFormateada}`, { align: "center" });
+
+    doc.moveDown(0.8);
+
+    // Datos del Cliente y Operador
+    doc.fontSize(8.5).font("Helvetica").text(`Cliente: ${orden.cliente_nombre}`);
+    doc.moveDown(0.2);
+    doc.fontSize(8.5).font("Helvetica").text(`Atendió: ${nombreAtendio}`);
+    doc.moveDown(0.6);
+
+    // --- TABLA ESTILIZADA ---
+    const startX = 15;
+    const tableWidth = 250;
+    const headerHeight = 18;
+    const rowHeight = 20;
+    let currentY = doc.y;
+
+    // 1. Cabecera Verde
+    doc.rect(startX, currentY, tableWidth, headerHeight).fill("#008020");
+
+    doc.fillColor("#FFFFFF").fontSize(8.5).font("Helvetica-Bold");
+    doc.text("Producto", startX + 8, currentY + 4, { width: 130 });
+    doc.text("Cant.", startX + 140, currentY + 4, { width: 40, align: "center" });
+    doc.text("Total", startX + 185, currentY + 4, { width: 55, align: "right" });
+
+    currentY += headerHeight;
+
+    // 2. Filas de Productos
+    let totalCalculado = 0;
+
+    articulos.forEach((item, index) => {
+      const cant = item.cantidad || 1;
+      const prod = item.producto_nombre;
+      const subtotal = parseFloat(item.subtotal || 0);
+      totalCalculado += subtotal;
+
+      const rowBgColor = index % 2 === 0 ? "#F8F8F8" : "#FFFFFF";
+      doc.rect(startX, currentY, tableWidth, rowHeight).fill(rowBgColor);
+
+      doc.fillColor("#444444").fontSize(8).font("Helvetica");
+      doc.text(prod, startX + 8, currentY + 5, { width: 130, height: 12, ellipsis: true });
+      doc.text(cant.toString(), startX + 140, currentY + 5, { width: 40, align: "center" });
+      doc.text(`$${subtotal.toFixed(2)}`, startX + 185, currentY + 5, { width: 55, align: "right" });
+
+      currentY += rowHeight;
+    });
+
+    // 3. Sección Total
+    doc.fillColor("#000000");
+    currentY += 10;
+    doc.fontSize(11).font("Helvetica-Bold");
+    const totalMostrar = parseFloat(orden.total || totalCalculado).toFixed(2);
+    doc.text(`TOTAL: $${totalMostrar}`, startX, currentY, { width: tableWidth, align: "right" });
+
+    // Mensaje Final
+    currentY += 25;
+    doc.fontSize(8.5).font("Helvetica").text("¡Gracias por su preferencia!", startX, currentY, { width: tableWidth, align: "center" });
+
+    doc.end();
+  } catch (error) {
+    console.error("Error al generar el PDF de Nota de Venta:", error);
+    res.status(500).json({ exito: false, mensaje: "Error al generar la Nota de Venta PDF" });
+  }
+};
+
+module.exports = {
+  crearOrden,
+  obtenerOrdenes,
+  modificarOrden,
+  registrarPago,
+  cancelarOrden,
+  obtenerCuentasPorCobrar,
+  generarPDFNotaVenta
 };

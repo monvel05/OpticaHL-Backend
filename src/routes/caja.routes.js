@@ -9,8 +9,9 @@ const { checkRole } = require('../middlewares/rol.middleware');
 // ==========================================
 // 🖨️ RUTAS DE IMPRESIÓN PDF (LIBRES DE TOKEN PARA ABRIR EN PESTAÑA NUEVA)
 // ==========================================
-router.get('/ticket/:folio', cajaController.descargarTicketPDF);
-router.get('/ticket-expres/pdf', cajaController.descargarTicketVentaExpresPDF); // 👈 AQUÍ ARRIBA
+router.get('/ticket-pdf/:folio', cajaController.descargarTicketPDF); // 👈 Corregido a ticket-pdf
+router.get('/ticket/:folio', cajaController.descargarTicketPDF);     // Alias de respaldo
+router.get('/ticket-expres/pdf', cajaController.descargarTicketVentaExpresPDF);
 router.get('/corte/pdf', cajaController.descargarTicketCortePDF);
 
 // ==========================================

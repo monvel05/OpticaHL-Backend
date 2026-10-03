@@ -220,16 +220,16 @@ const obtenerOrdenParaCobro = async (req, res) => {
  * @description Procesa pagos (Ingresos de órdenes / Venta Exprés) y egresos (gastos de caja)
  */
 const procesarPago = async (req, res) => {
-  const { 
-    folio, 
-    folio_orden, 
-    folioOrden, 
-    id_orden, 
-    monto, 
-    metodo_pago, 
-    id_sucursal, 
-    tipo_movimiento, 
-    concepto, 
+  const {
+    folio,
+    folio_orden,
+    folioOrden,
+    id_orden,
+    monto,
+    metodo_pago,
+    id_sucursal,
+    tipo_movimiento,
+    concepto,
     id_gasto,
     items // Arreglo de artículos enviado desde el frontend
   } = req.body;
@@ -250,12 +250,12 @@ const procesarPago = async (req, res) => {
          (id_sucursal, id_operador, folio_orden, id_gasto, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
          VALUES (?, ?, ?, ?, 'EGRESO', ?, ?, NOW(), ?)`,
         [
-          id_sucursal || "HL01", 
-          id_operador, 
-          null, 
-          id_gasto || 1, 
-          (metodo_pago || 'EFECTIVO').toUpperCase(), 
-          pagoIngresado, 
+          id_sucursal || "HL01",
+          id_operador,
+          null,
+          id_gasto || 1,
+          (metodo_pago || 'EFECTIVO').toUpperCase(),
+          pagoIngresado,
           concepto || 'Gasto General'
         ]
       );
@@ -285,10 +285,10 @@ const procesarPago = async (req, res) => {
          (id_sucursal, id_operador, folio_orden, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
          VALUES (?, ?, NULL, 'INGRESO', ?, ?, NOW(), ?)`,
         [
-          id_sucursal || "HL01", 
-          id_operador, 
-          (metodo_pago || 'EFECTIVO').toUpperCase(), 
-          pagoIngresado, 
+          id_sucursal || "HL01",
+          id_operador,
+          (metodo_pago || 'EFECTIVO').toUpperCase(),
+          pagoIngresado,
           concepto || 'COBRO RÁPIDO / MOSTRADOR'
         ]
       );
@@ -393,11 +393,11 @@ const procesarPago = async (req, res) => {
        (id_sucursal, id_operador, folio_orden, tipo_movimiento, metodo_pago, monto, fecha_hora, concepto) 
        VALUES (?, ?, ?, 'INGRESO', ?, ?, NOW(), ?)`,
       [
-        id_sucursal || "HL01", 
-        id_operador, 
-        folioReal, 
-        (metodo_pago || 'EFECTIVO').toUpperCase(), 
-        pagoIngresado, 
+        id_sucursal || "HL01",
+        id_operador,
+        folioReal,
+        (metodo_pago || 'EFECTIVO').toUpperCase(),
+        pagoIngresado,
         concepto || 'Pago en caja'
       ]
     );
@@ -438,7 +438,17 @@ const procesarPago = async (req, res) => {
  */
 const descargarTicketPDF = async (req, res) => {
   const { folio } = req.params;
+  const { operador } = req.query; // 1. Obtenemos el parámetro 'operador' enviado por URL
+
   const busquedaLimpia = folio ? String(folio).trim() : "";
+
+  // 2. Extraemos el nombre del operador que atiende
+  const nombreAtendio = 
+    operador || 
+    req.user?.nombre || 
+    req.user?.nombre_completo || 
+    req.usuario?.nombre || 
+    'Cajero';
 
   try {
     const [ordenes] = await pool.query(
@@ -493,6 +503,7 @@ const descargarTicketPDF = async (req, res) => {
     doc.text(`Folio: ${folioReal}`);
     doc.text(`Cliente: ${orden.nombre_completo}`);
     doc.text(`Estado: ${orden.estatus}`);
+    doc.text(`Atendió: ${nombreAtendio}`); // 3. Se imprime aquí la persona logueada
     doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`);
     doc.text("-----------------------------------------", { align: "center" });
 
@@ -613,7 +624,7 @@ const obtenerCorteCaja = async (req, res) => {
  * @description Genera el reporte PDF y MARCA los movimientos como cortados en la BD
  */
 const descargarTicketCortePDF = async (req, res) => {
-  const { operador } = req.query; // <-- Recibimos el nombre del operador
+  const { operador } = req.query;
 
   try {
     const [movimientos] = await pool.query(`
@@ -654,11 +665,10 @@ const descargarTicketCortePDF = async (req, res) => {
 
     doc.pipe(res);
 
-    // 📄 ENCABEZADO CON NOMBRE DE QUIEN REALIZÓ EL CORTE
     doc.fillColor("#2c3e50").fontSize(22).text("ÓPTICA HL", { align: "center" });
     doc.fontSize(14).text("REPORTE OFICIAL DE CORTE DE CAJA", { align: "center" });
     doc.fillColor("#7f8c8d").fontSize(9).text(`Fecha: ${new Date().toLocaleDateString()}  |  Hora: ${new Date().toLocaleTimeString()}`, { align: "center" });
-    doc.fillColor("#2c3e50").fontSize(10).text(`Realizado por: ${operador || 'Cajero de Turno'}`, { align: "center" }); // <-- AQUÍ SE IMPRIME EL NOMBRE
+    doc.fillColor("#2c3e50").fontSize(10).text(`Realizado por: ${operador || req.user?.nombre || req.usuario?.nombre || 'Cajero de Turno'}`, { align: "center" });
     doc.moveDown(1.5);
 
     doc.moveTo(40, doc.y).lineTo(572, doc.y).strokeColor("#34495e").lineWidth(1.5).stroke();
@@ -685,7 +695,7 @@ const descargarTicketCortePDF = async (req, res) => {
 
     if (movimientos.length > 0) {
       let y = doc.y;
-      
+
       doc.fillColor("#34495e").fontSize(9);
       doc.text("HORA", 40, y, { width: 70 });
       doc.text("TIPO", 110, y, { width: 80 });
@@ -700,13 +710,13 @@ const descargarTicketCortePDF = async (req, res) => {
       doc.fillColor("#2c3e50").fontSize(9);
       movimientos.forEach((mov) => {
         const hora = new Date(mov.fecha_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
+
         doc.text(hora, 40, y, { width: 70 });
         doc.text(mov.tipo_movimiento, 110, y, { width: 80 });
         doc.text(mov.folio_orden || mov.concepto || 'GASTO GENERAL', 190, y, { width: 170 });
         doc.text(mov.metodo_pago, 360, y, { width: 100 });
         doc.text(`$${parseFloat(mov.monto).toFixed(2)}`, 460, y, { width: 110, align: "right" });
-        
+
         y += 20;
 
         if (y > 720) {
@@ -730,10 +740,17 @@ const descargarTicketCortePDF = async (req, res) => {
  * @description Genera un ticket en PDF para Ventas Exprés / Cobro Rápido de mostrador
  */
 const descargarTicketVentaExpresPDF = async (req, res) => {
-  const { concepto, monto, metodo_pago, fecha } = req.query;
+  const { concepto, monto, metodo_pago, fecha, operador } = req.query;
 
   const montoNum = parseFloat(monto || 0);
   const fechaEmision = fecha ? new Date(fecha).toLocaleString() : new Date().toLocaleString();
+
+  const nombreAtendio = 
+    operador || 
+    req.user?.nombre || 
+    req.user?.nombre_completo || 
+    req.usuario?.nombre || 
+    'Cajero';
 
   try {
     const doc = new PDFDocument({ margin: 15, size: [226, 450] });
@@ -751,7 +768,7 @@ const descargarTicketVentaExpresPDF = async (req, res) => {
     doc.fontSize(7);
     doc.text(`Tipo: VENTA EXPRÉS`);
     doc.text(`Fecha/Hora: ${fechaEmision}`);
-    doc.text(`Atendió: Cajero de Turno`);
+    doc.text(`Atendió: ${nombreAtendio}`);
     doc.text("-----------------------------------------", { align: "center" });
 
     doc.fontSize(8).text("DETALLE DE COMPRA:", { underline: true });

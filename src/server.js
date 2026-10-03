@@ -17,7 +17,8 @@ const cajaRoutes = require('./routes/caja.routes');
 const reporteRoutes = require('./routes/reporte.routes');
 const facturacionRoutes = require('./routes/facturacion.routes');
 const sucursalRoutes = require('./routes/sucursal.routes');
-const descuentoRoutes = require('./routes/descuento.routes'); // Asegúrate de tener este archivo de rutas
+const descuentoRoutes = require('./routes/descuento.routes');
+const ordenReparacionRoutes = require('./routes/ordenreparacion.routes'); // Asegúrate de tener este archivo de rutas
 
 const app = express();
 
@@ -47,7 +48,8 @@ app.use('/api/reporte', reporteRoutes);
 app.use('/api/facturacion', facturacionRoutes);
 app.use('/api/sucursales', sucursalRoutes);
 app.use('/api/descuento', descuentoRoutes);
-app.use('/api/descuentos', descuentoRoutes); // <-- Agrega esta línea
+app.use('/api/descuentos', descuentoRoutes);
+app.use('/api/ordenes/reparacion', ordenReparacionRoutes);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Servidor backend corriendo en http://localhost:${PORT}`);
