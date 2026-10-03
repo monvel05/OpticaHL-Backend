@@ -1,0 +1,36 @@
+name: CI/CD Backend Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Despliegue en EC2 Ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Actualizar y Reiniciar Backend vía SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 40s
+          command_timeout: 3m
+          script: |
+            cd /home/ubuntu/opticahl-backend
+            git pull origin main
+            PUPPETEER_SKIP_DOWNLOAD=true npm install --omit=dev
+            pm2 restart optica-backend --update-env
+            pm2 save
+            # Espera activa y verificacion con reintentos (max 10s)
+            sleep 3
+            curl --retry 5 --retry-connrefused --retry-delay 2 -f http://localhost:3000/api/health || {
+              echo "El servidor falló al iniciar. Mostrando últimos logs de PM2:"
+              pm2 logs optica-backend --lines 30 --nostream
+              exit 1
+            }
