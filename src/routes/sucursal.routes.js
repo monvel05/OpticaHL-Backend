@@ -20,7 +20,8 @@ const validarCampos = (req, res, next) => {
 // ==========================================
 
 // 1. Obtener todas las sucursales (con filtros opcionales query `activo`, `busqueda`)
-router.get('/', verifyToken, sucursalController.obtenerSucursales);
+// No tiene verify token para que aparezcan todas las sucursales en el login, ya que se necesita mostrar la lista de sucursales disponibles para iniciar sesión.
+router.get('/', sucursalController.obtenerSucursales);
 
 // 2. Obtener una sucursal por ID
 router.get('/:id', verifyToken, sucursalController.obtenerSucursalPorId);
