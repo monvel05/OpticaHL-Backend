@@ -9,7 +9,7 @@ const auditLogger = async (req, res, next) => {
         // Solo registramos si el método es de escritura y si el status code indica éxito (2xx)
         if (metodosAfectados.includes(req.method) && res.statusCode >= 200 && res.statusCode < 300) {
             try {
-                const idUsuario = req.user ? req.user.id : null; // Obtenido del JWT
+                const idUsuario = req.user ? (req.user.id_operador || req.user.id) : null; // Obtenido del JWT
                 const accion = req.method;
                 const rutaAfectada = req.originalUrl;
                 const ip = req.ip || req.connection.remoteAddress;

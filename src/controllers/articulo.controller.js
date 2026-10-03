@@ -15,23 +15,23 @@ const crearArticulo = async (req, res) => {
   const safeCodigo = codigo || null;
   const safeNombre = nombre || null;
   const safeCategoria = categoria || 'GENERAL';
-  const safeIdProveedor = id_proveedor || null;
-  const safeCosto = costo || 0.00;
-  const safePrecioVenta = precio_venta || 0.00;
+  const safeIdProveedor = id_proveedor || 1;
+  const safeCosto = Number(costo) || 0.00;
+  const safePrecioVenta = Number(precio_venta) || 0.00;
   const safeUnidad = unidad || 'H87';
-  const safeCreadoPor = creado_por || null;
+  const safeCreadoPor = creado_por || req.user?.id_operador || req.user?.id || 1;
 
   const safeMarca = marca || null;
   const safeColor = color || null;
   const safeMaterial = material || null;
   const safeEstilo = estilo || null;
-  const safePuente = puente || null;
-  const safeDiagonal = diagonal || null;
+  const safePuente = (puente !== undefined && puente !== null && puente !== '') ? Number(puente) : 0;
+  const safeDiagonal = (diagonal !== undefined && diagonal !== null && diagonal !== '') ? Number(diagonal) : 0;
   const safeBase = base || null;
 
   const safeIdSucursal = id_sucursal || 'HL01';
-  const safeStockInicial = stock_inicial || 0;
-  const safeStockMinimo = stock_minimo || 5;
+  const safeStockInicial = Number(stock_inicial) || 0;
+  const safeStockMinimo = Number(stock_minimo) || 5;
 
   const conexion = await pool.getConnection();
 
@@ -39,7 +39,7 @@ const crearArticulo = async (req, res) => {
     await conexion.beginTransaction();
 
     const queryArticulo = `
-            INSERT INTO ARTICULOS (codigo, nombre, categoria, id_proveedor, costo, precio_venta, unidad, creado_por)
+            INSERT INTO articulos (codigo, nombre, categoria, id_proveedor, costo, precio_venta, unidad, creado_por)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
     const [resultArticulo] = await conexion.execute(queryArticulo, [
@@ -56,7 +56,7 @@ const crearArticulo = async (req, res) => {
 
     if (safeCategoria !== 'SERVICIO') { 
       const queryDetalle = `
-                INSERT INTO ARTICULO_DETALLE (id_articulo, marca, color, material, estilo, puente, diagonal, base)
+                INSERT INTO articulo_detalle (id_articulo, marca, color, material, estilo, puente, diagonal, base)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `;
       await conexion.execute(queryDetalle, [
@@ -70,8 +70,7 @@ const crearArticulo = async (req, res) => {
         safeBase,
       ]);
 
-      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM SUCURSALES WHERE activo = 1')
-        .catch(async () => await conexion.query('SELECT id_sucursal FROM sucursales WHERE activo = 1'))
+      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM sucursales WHERE activo = 1')
         .catch(() => [[]]);
       const validSucIds = (dbSucursales && dbSucursales.length > 0)
         ? new Set(dbSucursales.map(s => String(s.id_sucursal)))
@@ -91,7 +90,7 @@ const crearArticulo = async (req, res) => {
           ? Number(stocks_sucursales[sucId])
           : safeStockInicial;
         const queryInventario = `
-                  INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+                  INSERT INTO inventario_sucursal (id_articulo, id_sucursal, stock_actual, stock_minimo)
                   VALUES (?, ?, ?, ?)
                   ON DUPLICATE KEY UPDATE stock_actual = VALUES(stock_actual), stock_minimo = VALUES(stock_minimo)
               `;
@@ -118,7 +117,7 @@ const crearArticulo = async (req, res) => {
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ success: false, message: 'El código ya existe.' });
     }
-    res.status(500).json({ success: false, message: "Error interno al registrar." });
+    res.status(500).json({ success: false, message: "Error interno al registrar.", detalle: error.message });
   } finally {
     conexion.release();
   }
@@ -137,9 +136,9 @@ const obtenerArticulos = async (req, res) => {
                 d.marca, d.color, d.material, d.estilo,
                 COALESCE(i.stock_actual, 0) as stock_actual, 
                 COALESCE(i.stock_minimo, 5) as stock_minimo
-            FROM ARTICULOS a
-            LEFT JOIN ARTICULO_DETALLE d ON a.id_articulo = d.id_articulo
-            LEFT JOIN INVENTARIO_SUCURSAL i ON a.id_articulo = i.id_articulo AND i.id_sucursal = ?
+            FROM articulos a
+            LEFT JOIN articulo_detalle d ON a.id_articulo = d.id_articulo
+            LEFT JOIN inventario_sucursal i ON a.id_articulo = i.id_articulo AND i.id_sucursal = ?
             WHERE a.activo = 1
         `;
 
@@ -179,8 +178,8 @@ const actualizarArticulo = async (req, res) => {
   const safeColor = color || null;
   const safeMaterial = material || null;
   const safeEstilo = estilo || null;
-  const safePuente = puente || null;
-  const safeDiagonal = diagonal || null;
+  const safePuente = (puente !== undefined && puente !== null && puente !== '') ? Number(puente) : 0;
+  const safeDiagonal = (diagonal !== undefined && diagonal !== null && diagonal !== '') ? Number(diagonal) : 0;
   const safeBase = base || null;
 
   const conexion = await pool.getConnection();
@@ -189,7 +188,7 @@ const actualizarArticulo = async (req, res) => {
     await conexion.beginTransaction();
 
     const queryArticulo = `
-            UPDATE ARTICULOS 
+            UPDATE articulos 
             SET nombre = ?, categoria = ?, costo = ?, precio_venta = ?, unidad = ?
             WHERE id_articulo = ?
         `;
@@ -204,7 +203,7 @@ const actualizarArticulo = async (req, res) => {
 
     if (categoria !== 'SERVICIO') {
       const queryDetalle = `
-                INSERT INTO ARTICULO_DETALLE (id_articulo, marca, color, material, estilo, puente, diagonal, base)
+                INSERT INTO articulo_detalle (id_articulo, marca, color, material, estilo, puente, diagonal, base)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE 
                   marca = VALUES(marca), color = VALUES(color), material = VALUES(material),
@@ -221,8 +220,7 @@ const actualizarArticulo = async (req, res) => {
         safeBase,
       ]);
 
-      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM SUCURSALES WHERE activo = 1')
-        .catch(async () => await conexion.query('SELECT id_sucursal FROM sucursales WHERE activo = 1'))
+      const [dbSucursales] = await conexion.query('SELECT id_sucursal FROM sucursales WHERE activo = 1')
         .catch(() => [[]]);
       const validSucIds = (dbSucursales && dbSucursales.length > 0)
         ? new Set(dbSucursales.map(s => String(s.id_sucursal)))
@@ -235,7 +233,7 @@ const actualizarArticulo = async (req, res) => {
             continue;
           }
           const queryInventario = `
-            INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+            INSERT INTO inventario_sucursal (id_articulo, id_sucursal, stock_actual, stock_minimo)
             VALUES (?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE stock_actual = VALUES(stock_actual), stock_minimo = VALUES(stock_minimo)
           `;
@@ -249,7 +247,7 @@ const actualizarArticulo = async (req, res) => {
       } else if (id_sucursal && stock_inicial !== undefined) {
         if (!validSucIds || validSucIds.has(String(id_sucursal))) {
           const queryInventario = `
-            INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+            INSERT INTO inventario_sucursal (id_articulo, id_sucursal, stock_actual, stock_minimo)
             VALUES (?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE stock_actual = VALUES(stock_actual), stock_minimo = VALUES(stock_minimo)
           `;
@@ -272,7 +270,7 @@ const actualizarArticulo = async (req, res) => {
   } catch (error) {
     await conexion.rollback();
     console.error("Error al actualizar artículo:", error);
-    res.status(500).json({ success: false, message: "Error interno al actualizar." });
+    res.status(500).json({ success: false, message: "Error interno al actualizar.", detalle: error.message });
   } finally {
     conexion.release();
   }
@@ -285,7 +283,7 @@ const desactivarArticulo = async (req, res) => {
   const { id_articulo } = req.params;
 
   try {
-    const query = 'UPDATE ARTICULOS SET activo = 0 WHERE id_articulo = ?';
+    const query = 'UPDATE articulos SET activo = 0 WHERE id_articulo = ?';
     const [result] = await pool.execute(query, [id_articulo]);
 
     if (result.affectedRows === 0) {
@@ -298,7 +296,7 @@ const desactivarArticulo = async (req, res) => {
     });
   } catch (error) {
     console.error("Error al desactivar artículo:", error);
-    res.status(500).json({ success: false, message: "Error interno al desactivar." });
+    res.status(500).json({ success: false, message: "Error interno al desactivar.", detalle: error.message });
   }
 };
 
@@ -310,19 +308,19 @@ const actualizarStock = async (req, res) => {
   const { id_sucursal, cantidad_ajuste } = req.body;
 
   try {
-    const queryCheck = `SELECT stock_actual FROM INVENTARIO_SUCURSAL WHERE id_articulo = ? AND id_sucursal = ?`;
+    const queryCheck = `SELECT stock_actual FROM inventario_sucursal WHERE id_articulo = ? AND id_sucursal = ?`;
     const [rows] = await pool.execute(queryCheck, [id_articulo, id_sucursal]);
 
     if (rows.length === 0) {
       const stockInicialSeguro = cantidad_ajuste > 0 ? cantidad_ajuste : 0;
       const queryInsert = `
-                INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+                INSERT INTO inventario_sucursal (id_articulo, id_sucursal, stock_actual, stock_minimo)
                 VALUES (?, ?, ?, 5)
             `;
       await pool.execute(queryInsert, [id_articulo, id_sucursal, stockInicialSeguro]);
     } else {
       const queryUpdate = `
-                UPDATE INVENTARIO_SUCURSAL 
+                UPDATE inventario_sucursal 
                 SET stock_actual = stock_actual + ? 
                 WHERE id_articulo = ? AND id_sucursal = ?
             `;
@@ -332,7 +330,7 @@ const actualizarStock = async (req, res) => {
     res.status(200).json({ success: true, message: "Stock actualizado correctamente." });
   } catch (error) {
     console.error("Error al actualizar stock:", error);
-    res.status(500).json({ success: false, message: "Error interno al actualizar inventario." });
+    res.status(500).json({ success: false, message: "Error interno al actualizar inventario.", detalle: error.message });
   }
 };
 

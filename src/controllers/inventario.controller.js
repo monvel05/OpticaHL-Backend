@@ -13,9 +13,9 @@ const obtenerAlertasStock = async (req, res) => {
                 a.codigo, a.nombre, a.categoria,
                 inv.stock_actual, inv.stock_minimo,
                 s.nombre AS sucursal
-            FROM INVENTARIO_SUCURSAL inv
-            JOIN ARTICULOS a ON inv.id_articulo = a.id_articulo
-            JOIN SUCURSALES s ON inv.id_sucursal = s.id_sucursal AND s.activo = 1
+            FROM inventario_sucursal inv
+            JOIN articulos a ON inv.id_articulo = a.id_articulo
+            JOIN sucursales s ON inv.id_sucursal = s.id_sucursal AND s.activo = 1
             WHERE inv.stock_actual <= inv.stock_minimo AND a.activo = 1
         `;
 
@@ -33,7 +33,7 @@ const obtenerAlertasStock = async (req, res) => {
     console.error("Error al obtener alertas de stock:", error);
     res
       .status(500)
-      .json({ success: false, message: "Error interno del servidor." });
+      .json({ success: false, message: "Error interno del servidor.", detalle: error.message });
   }
 };
 
@@ -46,7 +46,7 @@ const actualizarStock = async (req, res) => {
 
   try {
     const query = `
-            UPDATE INVENTARIO_SUCURSAL 
+            UPDATE inventario_sucursal 
             SET stock_actual = ? 
             WHERE id_articulo = ? AND id_sucursal = ?
         `;
@@ -75,6 +75,7 @@ const actualizarStock = async (req, res) => {
       .json({
         success: false,
         message: "Error interno al actualizar el inventario.",
+        detalle: error.message
       });
   }
 };
@@ -103,7 +104,7 @@ const trasladarStock = async (req, res) => {
 
     // 1. Descontar de la sucursal de origen
     const queryDescuento = `
-            UPDATE INVENTARIO_SUCURSAL 
+            UPDATE inventario_sucursal 
             SET stock_actual = stock_actual - ? 
             WHERE id_articulo = ? AND id_sucursal = ? AND stock_actual >= ?
         `;
@@ -125,7 +126,7 @@ const trasladarStock = async (req, res) => {
 
     // 2. Aumentar en la sucursal de destino
     const queryAumento = `
-            INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+            INSERT INTO inventario_sucursal (id_articulo, id_sucursal, stock_actual, stock_minimo)
             VALUES (?, ?, ?, 5)
             ON DUPLICATE KEY UPDATE stock_actual = stock_actual + ?
         `;
@@ -157,7 +158,7 @@ const trasladarStock = async (req, res) => {
     console.error("Error al trasladar stock:", error);
     res
       .status(500)
-      .json({ success: false, message: "Error interno al procesar el traslado." });
+      .json({ success: false, message: "Error interno al procesar el traslado.", detalle: error.message });
   } finally {
     conexion.release();
   }
@@ -170,7 +171,7 @@ const activarArticuloSucursal = async (req, res) => {
   const { id_articulo, id_sucursal } = req.body;
   try {
     const query = `
-      INSERT INTO INVENTARIO_SUCURSAL (id_articulo, id_sucursal, stock_actual, stock_minimo)
+      INSERT INTO inventario_sucursal (id_articulo, id_sucursal, stock_actual, stock_minimo)
       VALUES (?, ?, 0, 5)
       ON DUPLICATE KEY UPDATE stock_actual = stock_actual
     `;
@@ -178,7 +179,7 @@ const activarArticuloSucursal = async (req, res) => {
     res.status(200).json({ success: true, message: "Artículo activado en la sucursal." });
   } catch (error) {
     console.error("Error al activar artículo en sucursal:", error);
-    res.status(500).json({ success: false, message: "Error interno." });
+    res.status(500).json({ success: false, message: "Error interno.", detalle: error.message });
   }
 };
 
@@ -191,15 +192,15 @@ const consultarArmazones = async (req, res) => {
       SELECT 
         a.id_articulo, a.codigo, a.nombre, a.precio_venta, a.costo,
         det.marca, det.color, det.material, det.estilo, det.puente, det.diagonal, det.base
-      FROM ARTICULOS a
-      JOIN ARTICULO_DETALLE det ON a.id_articulo = det.id_articulo
+      FROM articulos a
+      JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
       WHERE a.categoria = 'Z' AND a.activo = 1
     `;
     const [armazones] = await pool.query(query);
     res.status(200).json({ success: true, data: armazones });
   } catch (error) {
     console.error("Error al consultar armazones:", error);
-    res.status(500).json({ success: false, message: "Error interno." });
+    res.status(500).json({ success: false, message: "Error interno.", detalle: error.message });
   }
 };
 
@@ -268,17 +269,11 @@ const obtenerInventarioGeneral = async (req, res) => {
       const ids = articulos.map(a => a.id_articulo);
       const [branchStocks] = await pool.query(
         `SELECT inv.id_articulo, inv.id_sucursal, inv.stock_actual 
-         FROM INVENTARIO_SUCURSAL inv 
-         JOIN SUCURSALES s ON inv.id_sucursal = s.id_sucursal AND s.activo = 1 
-         WHERE inv.id_articulo IN (?)`,
-        [ids]
-      ).catch(async () => await pool.query(
-        `SELECT inv.id_articulo, inv.id_sucursal, inv.stock_actual 
          FROM inventario_sucursal inv 
          JOIN sucursales s ON inv.id_sucursal = s.id_sucursal AND s.activo = 1 
          WHERE inv.id_articulo IN (?)`,
         [ids]
-      )).catch(() => [[]]);
+      ).catch(() => [[]]);
 
       (branchStocks || []).forEach(row => {
         if (!stocksPorArticulo[row.id_articulo]) stocksPorArticulo[row.id_articulo] = {};
@@ -305,18 +300,17 @@ const obtenerInventarioGeneral = async (req, res) => {
     res.status(200).json({ success: true, data: datosMapeados });
   } catch (error) {
     console.error("Error al obtener inventario general:", error);
-    res.status(500).json({ success: false, message: "Error interno del servidor." });
+    res.status(500).json({ success: false, message: "Error interno del servidor.", detalle: error.message });
   }
 };
 
 const obtenerSucursales = async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT id_sucursal, nombre FROM SUCURSALES WHERE activo = 1 ORDER BY id_sucursal ASC')
-      .catch(async () => await pool.query('SELECT id_sucursal, nombre FROM sucursales WHERE activo = 1 ORDER BY id_sucursal ASC'));
+    const [rows] = await pool.query('SELECT id_sucursal, nombre FROM sucursales WHERE activo = 1 ORDER BY id_sucursal ASC');
     res.status(200).json({ success: true, data: rows || [] });
   } catch (error) {
     console.error('Error al obtener sucursales:', error);
-    res.status(500).json({ success: false, message: 'Error al consultar sucursales.' });
+    res.status(500).json({ success: false, message: 'Error al consultar sucursales.', detalle: error.message });
   }
 };
 
@@ -340,8 +334,8 @@ const buscarProductosCaja = async (req, res) => {
         a.nombre AS descripcion,
         a.precio_venta AS precio,
         IFNULL(SUM(inv.stock_actual), 0) AS stock
-      FROM ARTICULOS a
-      LEFT JOIN INVENTARIO_SUCURSAL inv ON a.id_articulo = inv.id_articulo
+      FROM articulos a
+      LEFT JOIN inventario_sucursal inv ON a.id_articulo = inv.id_articulo
       WHERE a.activo = 1 
         AND (a.codigo LIKE ? OR a.nombre LIKE ?)
       GROUP BY a.id_articulo, a.codigo, a.nombre, a.precio_venta
@@ -359,7 +353,7 @@ const buscarProductosCaja = async (req, res) => {
     res.status(200).json(resultado);
   } catch (error) {
     console.error("Error al buscar productos para caja:", error);
-    res.status(500).json({ success: false, message: "Error al consultar inventario." });
+    res.status(500).json({ success: false, message: "Error al consultar inventario.", detalle: error.message });
   }
 };
 

@@ -1,12 +1,12 @@
-const pool = require('../config/db'); // Cambiado a pool
+const pool = require('../config/db');
 
 const obtenerProveedores = async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM PROVEEDORES WHERE activo = 1');
+        const [rows] = await pool.query('SELECT * FROM proveedores WHERE activo = 1');
         res.status(200).json({ success: true, data: rows });
     } catch (error) {
         console.error('Error al obtener proveedores:', error);
-        res.status(500).json({ success: false, message: 'Error interno del servidor' });
+        res.status(500).json({ success: false, message: 'Error interno del servidor', detalle: error.message });
     }
 };
 
@@ -15,11 +15,17 @@ const crearProveedor = async (req, res) => {
 
     try {
         const query = `
-            INSERT INTO PROVEEDORES (rfc, nombre, domicilio, telefono, email, creado_por) 
+            INSERT INTO proveedores (rfc, nombre, domicilio, telefono, email, creado_por) 
             VALUES (?, ?, ?, ?, ?, ?)
         `;
-        // Usamos pool.query en lugar de pool.execute para mantener consistencia
-        const [result] = await pool.query(query, [rfc, nombre, domicilio, telefono, email, creado_por]);
+        const [result] = await pool.query(query, [
+            rfc || null, 
+            nombre, 
+            domicilio || null, 
+            telefono || null, 
+            email || null, 
+            creado_por || req.user?.id_operador || req.user?.id || 1
+        ]);
         
         res.status(201).json({ 
             success: true, 
@@ -28,7 +34,7 @@ const crearProveedor = async (req, res) => {
         });
     } catch (error) {
         console.error('Error al crear proveedor:', error);
-        res.status(500).json({ success: false, message: 'Error interno del servidor' });
+        res.status(500).json({ success: false, message: 'Error interno del servidor', detalle: error.message });
     }
 };
 
@@ -37,8 +43,8 @@ const desactivarProveedor = async (req, res) => {
     const { modificado_por } = req.body; 
 
     try {
-        const query = 'UPDATE PROVEEDORES SET activo = 0, modificado_por = ? WHERE id_proveedor = ?';
-        const [result] = await pool.query(query, [modificado_por, idProveedor]);
+        const query = 'UPDATE proveedores SET activo = 0, modificado_por = ? WHERE id_proveedor = ?';
+        const [result] = await pool.query(query, [modificado_por || req.user?.id_operador || 1, idProveedor]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ success: false, message: 'Proveedor no encontrado' });
@@ -47,7 +53,7 @@ const desactivarProveedor = async (req, res) => {
         res.status(200).json({ success: true, message: 'Proveedor desactivado correctamente' });
     } catch (error) {
         console.error('Error al desactivar proveedor:', error);
-        res.status(500).json({ success: false, message: 'Error interno del servidor' });
+        res.status(500).json({ success: false, message: 'Error interno del servidor', detalle: error.message });
     }
 };
 

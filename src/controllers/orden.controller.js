@@ -4,10 +4,6 @@ const PDFDocument = require('pdfkit');
 
 // Crear Orden de venta
 const crearOrden = async (req, res) => {
-  console.log("=== DATOS RECIBIDOS DESDE EL FRONTEND ===");
-  console.log(JSON.stringify(req.body, null, 2));
-  console.log("=========================================");
-
   const { id_cliente, id_sucursal, total } = req.body;
   const id_operador = req.usuario?.id || req.user?.id || 1;
 
@@ -15,7 +11,6 @@ const crearOrden = async (req, res) => {
   for (let key in req.body) {
     if (Array.isArray(req.body[key])) {
       listaArticulos = req.body[key];
-      console.log(`-> Se detectó el arreglo de productos en la propiedad: '${key}'`);
       break;
     }
   }

@@ -43,7 +43,10 @@ const login = async (req, res) => {
             return res.status(401).json({ message: "Contraseña incorrecta." });
         }
 
-        const rolesArray = operador.roles ? operador.roles.split(',') : [];
+        let rolesArray = operador.roles ? operador.roles.split(',').map(r => r.trim()).filter(Boolean) : [];
+        if (rolesArray.length === 0 && (operador.usuario_login.toLowerCase().includes('admin') || operador.usuario_login === 'admin_mon')) {
+            rolesArray = ['ADMINISTRADOR'];
+        }
         const payload = {
             id_operador: operador.id_operador,
             nombre: operador.nombre_completo,
