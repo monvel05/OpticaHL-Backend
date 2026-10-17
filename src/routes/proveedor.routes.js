@@ -1,18 +1,28 @@
 const express = require('express');
 const router = express.Router();
 const proveedorController = require('../controllers/proveedor.controller');
-const {verifyToken} = require('../middlewares/auth.middleware');
-const {checkRole} = require('../middlewares/rol.middleware');
+const { verifyToken } = require('../middlewares/auth.middleware');
+const { checkRole } = require('../middlewares/rol.middleware');
 
 router.use(verifyToken);
 
-// Obtener todos los proveedores activos
+// ==================== PROVEEDORES ====================
+
+// GET /api/proveedores
 router.get('/', proveedorController.obtenerProveedores);
 
-// Crear un nuevo proveedor
+// POST /api/proveedores
 router.post('/', checkRole(['ADMINISTRADOR']), proveedorController.crearProveedor);
 
-// Desactivar un proveedor (Soft Delete)
+// PUT /api/proveedores/:id
+router.put('/:id', checkRole(['ADMINISTRADOR']), proveedorController.actualizarProveedor);
+
+// PUT /api/proveedores/:idProveedor/desactivar
 router.put('/:idProveedor/desactivar', checkRole(['ADMINISTRADOR']), proveedorController.desactivarProveedor);
+
+// ==================== COMPRAS Y VALES ====================
+
+router.post('/compras', checkRole(['ADMINISTRADOR']), proveedorController.guardarCompra);
+router.post('/vales', checkRole(['ADMINISTRADOR']), proveedorController.guardarVale);
 
 module.exports = router;
