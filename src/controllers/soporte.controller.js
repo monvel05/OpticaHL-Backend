@@ -24,18 +24,9 @@ exports.enviarReporte = async (req, res) => {
       roles: ['MOSTRADOR']
     };
 
-    // Determinar departamento (ventas o finanzas)
-    let deptoFinal = departamento;
-    if (!deptoFinal) {
-      const roles = Array.isArray(operadorData.roles) ? operadorData.roles : [operadorData.roles || ''];
-      const esFinanzas = roles.some(r => ['ADMINISTRADOR', 'CONTADOR', 'FACTURACION', 'FINANZAS'].includes(String(r).toUpperCase()));
-      deptoFinal = esFinanzas ? 'finanzas' : 'ventas';
-    }
-
     const resultado = await correoService.enviarReporteUsuario({
       tipo,
       descripcion: descripcion.trim(),
-      departamento: deptoFinal,
       operador: operadorData,
       sucursal: sucursal || operadorData.id_sucursal || 'Principal',
       rutaActual: rutaActual || 'N/A'

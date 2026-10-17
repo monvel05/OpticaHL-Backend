@@ -64,7 +64,9 @@ const login = async (req, res) => {
             operador: {
                 id_operador: operador.id_operador,
                 nombre: operador.nombre_completo,
+                nombre_completo: operador.nombre_completo,
                 usuario: operador.usuario_login,
+                usuario_login: operador.usuario_login,
                 id_sucursal: sucursal_actual,
                 roles: rolesArray
             }

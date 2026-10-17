@@ -17,10 +17,31 @@ const getCredencialesVentas = () => ({
   pass: process.env.MAIL_VENTAS_PASS || process.env.EMAIL_PASS
 });
 
-const getCredencialesFacturacion = () => ({
-  user: process.env.MAIL_FACTURACION_USER || process.env.EMAIL_USER,
-  pass: process.env.MAIL_FACTURACION_PASS || process.env.EMAIL_PASS
+const getCredencialesFinanzas = () => ({
+  user: process.env.MAIL_FINANZAS_USER || process.env.MAIL_FACTURACION_USER || process.env.EMAIL_USER,
+  pass: process.env.MAIL_FINANZAS_PASS || process.env.MAIL_FACTURACION_PASS || process.env.EMAIL_PASS
 });
+
+const getCredencialesFacturacion = () => ({
+  user: process.env.MAIL_FACTURACION_USER || process.env.MAIL_FINANZAS_USER || process.env.EMAIL_USER,
+  pass: process.env.MAIL_FACTURACION_PASS || process.env.MAIL_FINANZAS_PASS || process.env.EMAIL_PASS
+});
+
+const getCredencialesAdmin = () => ({
+  user: process.env.MAIL_ADMINISTRADOR_USER || process.env.MAIL_ADMIN_USER || process.env.EMAIL_USER,
+  pass: process.env.MAIL_ADMINISTRADOR_PASS || process.env.MAIL_ADMIN_PASS || process.env.EMAIL_PASS
+});
+
+const getCredencialesInventario = () => {
+  if (process.env.MAIL_INVENTARIO_USER && process.env.MAIL_INVENTARIO_PASS) {
+    return {
+      user: process.env.MAIL_INVENTARIO_USER,
+      pass: process.env.MAIL_INVENTARIO_PASS
+    };
+  }
+  // Fallback transparente a Ventas
+  return getCredencialesVentas();
+};
 
 const getCredencialesAlertas = () => ({
   user: process.env.MAIL_ALERTAS_USER || process.env.MAIL_VENTAS_USER || process.env.EMAIL_USER,
@@ -29,6 +50,49 @@ const getCredencialesAlertas = () => ({
 
 const getEmailSoporteDestino = () => {
   return process.env.ADMIN_ALERTAS_EMAIL || 'soporte@opthospitaldelentes.com';
+};
+
+/**
+ * Resuelve el remitente y canal según el rol del usuario:
+ * - Administrador -> Correo de Administrador
+ * - Contador -> Correo de Finanzas
+ * - Inventario -> Correo de Inventario (o Ventas si aún no tiene asignado)
+ * - Mostrador / Caja / Optometrista -> Correo de Ventas
+ */
+const resolverRemitenteSegunRol = (roles = []) => {
+  const rolesArray = (Array.isArray(roles) ? roles : [roles || '']).map(r => String(r).toUpperCase());
+
+  // 1. Rol Administrador
+  if (rolesArray.some(r => r.includes('ADMIN'))) {
+    const creds = getCredencialesAdmin();
+    if (creds.user && creds.pass) {
+      return { creds, canalLabel: 'Administración' };
+    }
+  }
+
+  // 2. Rol Contador / Finanzas
+  if (rolesArray.some(r => r.includes('CONTADOR') || r.includes('FINAN'))) {
+    const creds = getCredencialesFinanzas();
+    if (creds.user && creds.pass) {
+      return { creds, canalLabel: 'Finanzas' };
+    }
+  }
+
+  // 3. Rol Inventario
+  if (rolesArray.some(r => r.includes('INVENTARIO'))) {
+    const tienePropio = !!(process.env.MAIL_INVENTARIO_USER && process.env.MAIL_INVENTARIO_PASS);
+    const creds = getCredencialesInventario();
+    return {
+      creds,
+      canalLabel: tienePropio ? 'Inventario' : 'Ventas (Asignado a Inventario)'
+    };
+  }
+
+  // 4. Rol Mostrador / Caja / Optometrista o general -> Ventas
+  return {
+    creds: getCredencialesVentas(),
+    canalLabel: 'Ventas'
+  };
 };
 
 /**
@@ -178,15 +242,19 @@ exports.enviarTicketVenta = async ({ emailDestino, folioOrden, nombreCliente, or
 
 /**
  * 3. Envía reporte de usuario (Falla del sistema o Petición de función).
- * Emisor: Ventas o Finanzas (según el departamento/rol del operador logueado).
+ * Emisor: Detectado automáticamente según el rol del operador logueado:
+ *   - Administrador -> Correo de Administrador
+ *   - Contador -> Correo de Finanzas
+ *   - Inventario -> Correo de Inventario (o Ventas)
+ *   - Mostrador / Caja / Optometrista -> Correo de Ventas
  * Destinatario: soporte@opthospitaldelentes.com
  */
-exports.enviarReporteUsuario = async ({ tipo, descripcion, departamento = 'ventas', operador = {}, sucursal = '', rutaActual = '' }) => {
-  const esFinanzas = String(departamento).toLowerCase().includes('finan') || String(departamento).toLowerCase().includes('factura');
-  const creds = esFinanzas ? getCredencialesFacturacion() : getCredencialesVentas();
+exports.enviarReporteUsuario = async ({ tipo, descripcion, operador = {}, sucursal = '', rutaActual = '' }) => {
+  const rolesOperador = operador.roles || operador.rol || [];
+  const { creds, canalLabel } = resolverRemitenteSegunRol(rolesOperador);
 
   if (!creds.user || !creds.pass) {
-    // Si faltan credenciales del departamento específico, intentamos el canal de alertas o ventas
+    // Si faltan credenciales del canal específico, intentamos el canal de alertas o ventas
     const credsFallback = getCredencialesAlertas();
     if (credsFallback.user && credsFallback.pass) {
       creds.user = credsFallback.user;
@@ -204,70 +272,85 @@ exports.enviarReporteUsuario = async ({ tipo, descripcion, departamento = 'venta
 
   const esFalla = tipo === 'falla';
   const nombreTipo = esFalla ? 'Reporte de Falla en el Sistema' : 'Petición de Nueva Función / Sugerencia';
-  const colorBadge = esFalla ? '#dc2626' : '#2563eb';
-  const bgBadge = esFalla ? '#fef2f2' : '#eff6ff';
+  const colorTema = esFalla ? '#dc2626' : '#2563eb';
+  const bgTema = esFalla ? '#fef2f2' : '#eff6ff';
 
-  const operadorNombre = operador.nombre_completo || operador.usuario_login || 'Operador no identificado';
-  const operadorRol = Array.isArray(operador.roles) ? operador.roles.join(', ') : (operador.roles || operador.rol || 'No especificado');
-  const departamentoLabel = esFinanzas ? 'Finanzas / Facturación' : 'Ventas / Mostrador';
+  const operadorNombre = operador.nombre_completo || operador.usuario_login || 'Operador no especificado';
+  const operadorRol = Array.isArray(operador.roles) ? operador.roles.join(', ') : (operador.roles || operador.rol || 'Sin rol asignado');
+  const operadorLogin = operador.usuario_login || 'N/A';
 
   const asunto = esFalla 
-    ? `[Reporte de Falla] Óptica HL - ${operadorNombre} (${sucursal || 'General'})`
-    : `[Petición de Función] Óptica HL - ${operadorNombre} (${sucursal || 'General'})`;
+    ? `[Reporte de Falla] Óptica HL - ${operadorNombre} (${operadorRol})`
+    : `[Petición de Función] Óptica HL - ${operadorNombre} (${operadorRol})`;
 
   const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
 
   const mailOptions = {
-    from: `"Óptica HL (${departamentoLabel})" <${creds.user}>`,
+    from: `"Óptica HL (${canalLabel})" <${creds.user}>`,
     to: destino,
     subject: asunto,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; color: #1e293b; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-        <div style="background-color: ${colorBadge}; color: white; padding: 18px 24px;">
-          <h2 style="margin: 0; font-size: 20px;">Óptica HL - Mesa de Soporte y Desarrollo</h2>
-          <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 13px;">Notificación enviada desde el sistema web</p>
+        <div style="background-color: ${colorTema}; color: white; padding: 18px 24px;">
+          <h2 style="margin: 0; font-size: 20px;">Óptica HL - Mesa de Soporte Técnico</h2>
+          <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 13px;">Notificación enviada directamente desde el sistema</p>
         </div>
 
         <div style="padding: 24px;">
-          <div style="display: inline-block; background-color: ${bgBadge}; border: 1px solid ${colorBadge}; color: ${colorBadge}; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 13px; margin-bottom: 16px;">
+          <div style="display: inline-block; background-color: ${bgTema}; border: 1px solid ${colorTema}; color: ${colorTema}; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 13px; margin-bottom: 16px;">
             ${esFalla ? '⚠️' : '💡'} ${nombreTipo}
           </div>
 
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;">
-            <tr>
-              <td style="padding: 6px 0; color: #64748b; width: 140px;"><b>Operador:</b></td>
-              <td style="padding: 6px 0; color: #0f172a; font-weight: 600;">${operadorNombre}</td>
-            </tr>
-            <tr>
-              <td style="padding: 6px 0; color: #64748b;"><b>Rol / Puesto:</b></td>
-              <td style="padding: 6px 0; color: #0f172a;">${operadorRol}</td>
-            </tr>
-            <tr>
-              <td style="padding: 6px 0; color: #64748b;"><b>Departamento:</b></td>
-              <td style="padding: 6px 0; color: #0f172a;">${departamentoLabel} (Remitente: ${creds.user})</td>
-            </tr>
-            <tr>
-              <td style="padding: 6px 0; color: #64748b;"><b>Sucursal:</b></td>
-              <td style="padding: 6px 0; color: #0f172a;">${sucursal || 'No especificada'}</td>
-            </tr>
-            <tr>
-              <td style="padding: 6px 0; color: #64748b;"><b>Pantalla / Ruta:</b></td>
-              <td style="padding: 6px 0; color: #0f172a;"><code>${rutaActual || 'No especificada'}</code></td>
-            </tr>
-            <tr>
-              <td style="padding: 6px 0; color: #64748b;"><b>Fecha y Hora:</b></td>
-              <td style="padding: 6px 0; color: #0f172a;">${fechaHora}</td>
-            </tr>
-          </table>
+          <!-- DATOS DE QUIEN HACE LA PETICIÓN -->
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+            <h3 style="margin: 0 0 12px 0; color: #0f172a; font-size: 15px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px;">
+              👤 Datos de quien realiza la petición
+            </h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <tr>
+                <td style="padding: 5px 0; color: #64748b; width: 140px;"><b>Nombre:</b></td>
+                <td style="padding: 5px 0; color: #0f172a; font-weight: 700;">${operadorNombre}</td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 0; color: #64748b;"><b>Rol en Sistema:</b></td>
+                <td style="padding: 5px 0; color: #0f172a; font-weight: 600;">
+                  <span style="background-color: #e2e8f0; padding: 2px 8px; border-radius: 4px;">${operadorRol}</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 0; color: #64748b;"><b>Usuario (Login):</b></td>
+                <td style="padding: 5px 0; color: #0f172a;">${operadorLogin}</td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 0; color: #64748b;"><b>Sucursal:</b></td>
+                <td style="padding: 5px 0; color: #0f172a;">${sucursal || 'No especificada'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 0; color: #64748b;"><b>Pantalla de origen:</b></td>
+                <td style="padding: 5px 0; color: #0f172a;"><code>${rutaActual || 'N/A'}</code></td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 0; color: #64748b;"><b>Buzón Remitente:</b></td>
+                <td style="padding: 5px 0; color: #0f172a;">${creds.user} (${canalLabel})</td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 0; color: #64748b;"><b>Fecha y Hora:</b></td>
+                <td style="padding: 5px 0; color: #0f172a;">${fechaHora}</td>
+              </tr>
+            </table>
+          </div>
 
-          <div style="background-color: #f8fafc; border-left: 4px solid ${colorBadge}; padding: 16px; border-radius: 4px; margin-top: 10px;">
-            <p style="margin: 0 0 8px 0; font-weight: bold; color: #334155; font-size: 13px; text-transform: uppercase;">Descripción de la necesidad / reporte:</p>
+          <!-- DESCRIPCIÓN DEL REPORTE -->
+          <div style="background-color: #ffffff; border-left: 4px solid ${colorTema}; padding: 16px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; border-left-width: 4px; border-left-color: ${colorTema};">
+            <p style="margin: 0 0 8px 0; font-weight: bold; color: #334155; font-size: 13px; text-transform: uppercase;">
+              Detalle del Requerimiento / Problema:
+            </p>
             <p style="margin: 0; white-space: pre-wrap; font-size: 14px; line-height: 1.6; color: #1e293b;">${descripcion}</p>
           </div>
         </div>
 
         <div style="background-color: #f1f5f9; padding: 12px 24px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; text-align: center;">
-          Correo generado automáticamente por el sistema de Óptica HL hacia ${destino}
+          Correo automático generado desde el sistema Óptica HL hacia ${destino}
         </div>
       </div>
     `
@@ -275,7 +358,7 @@ exports.enviarReporteUsuario = async ({ tipo, descripcion, departamento = 'venta
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`[Correo Service] Reporte de usuario enviado a ${destino} desde ${creds.user}`);
+    console.log(`[Correo Service] Reporte enviado a ${destino} desde ${creds.user} (${canalLabel}) para ${operadorNombre} (${operadorRol})`);
     return { ok: true };
   } catch (error) {
     console.error(`[Correo Service Error] Error enviando reporte a ${destino}:`, error.message);
