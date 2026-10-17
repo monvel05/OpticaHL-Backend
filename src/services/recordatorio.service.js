@@ -2,10 +2,18 @@ const cron = require('node-cron');
 const pool = require('../config/db');
 const nodemailer = require('nodemailer');
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-});
+const getRecordatorioTransporter = () => {
+  const user = process.env.MAIL_VENTAS_USER || process.env.EMAIL_USER;
+  const pass = process.env.MAIL_VENTAS_PASS || process.env.EMAIL_PASS;
+  if (!user || !pass) return null;
+  return {
+    transporter: nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user, pass }
+    }),
+    user
+  };
+};
 
 // Esta función se ejecuta todos los días a las 9:00 AM
 cron.schedule('0 9 * * *', async () => {
@@ -23,10 +31,15 @@ cron.schedule('0 9 * * *', async () => {
         `;
         
         const [pacientes] = await pool.query(query);
+        const mailConfig = getRecordatorioTransporter();
+        if (!mailConfig) {
+          console.warn('Recordatorios omitidos: Faltan credenciales de correo en .env');
+          return;
+        }
 
         for (let paciente of pacientes) {
             const mailOptions = {
-                from: process.env.EMAIL_USER,
+                from: `"Óptica HL" <${mailConfig.user}>`,
                 to: paciente.email,
                 subject: 'Óptica HL - Es momento de tu revisión anual 👓',
                 html: `<h3>Hola ${paciente.nombre_completo},</h3>
@@ -34,7 +47,7 @@ cron.schedule('0 9 * * *', async () => {
                        <p>La salud visual es importante. ¡Te invitamos a agendar tu examen de la vista gratuito hoy mismo!</p>`
             };
 
-            await transporter.sendMail(mailOptions);
+            await mailConfig.transporter.sendMail(mailOptions);
             console.log(`Recordatorio enviado a: ${paciente.email}`);
         }
     } catch (error) {

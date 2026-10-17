@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const nodemailer = require("nodemailer");
 const PDFDocument = require("pdfkit");
+const correoService = require("../services/correo.service");
 
 /**
  * @function enviarReciboPago
@@ -13,7 +14,7 @@ const enviarReciboPago = async (
   montoPagado,
   saldoRestante
 ) => {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !emailDestino) {
+  if (!emailDestino) {
     return;
   }
 
@@ -46,92 +47,15 @@ const enviarReciboPago = async (
       [folioOrden]
     );
 
-    let filasArticulosHTML = "";
-    if (articulos.length > 0) {
-      articulos.forEach((item) => {
-        const cant = item.cantidad || 1;
-        const prod = item.producto_nombre || "Artículo";
-        const precio = parseFloat(item.subtotal || item.precio_unitario || 0).toFixed(2);
-        filasArticulosHTML += `<p style="margin: 3px 0;">${cant}x ${prod} - $${precio}</p>`;
-      });
-    } else {
-      filasArticulosHTML = `<p style="margin: 3px 0;">Venta de Graduación / Servicio de Óptica</p>`;
-    }
-
-    let filasPagosHTML = "";
-    let totalPagado = 0;
-    if (pagos.length > 0) {
-      pagos.forEach((pago) => {
-        const montoNum = parseFloat(pago.monto);
-        totalPagado += montoNum;
-        const fecha = new Date(pago.fecha_hora).toLocaleDateString();
-        filasPagosHTML += `<p style="margin: 3px 0;">• ${pago.metodo_pago}: $${montoNum.toFixed(2)} (${fecha})</p>`;
-      });
-    } else {
-      filasPagosHTML = `<p style="margin: 3px 0;">Sin pagos registrados</p>`;
-    }
-
-    const totalGeneral = parseFloat(orden.total || 0);
-    const fechaEmision = new Date().toLocaleDateString();
-
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
+    await correoService.enviarTicketVenta({
+      emailDestino,
+      folioOrden,
+      nombreCliente,
+      orden,
+      articulos,
+      pagos,
+      saldoRestante
     });
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: emailDestino,
-      subject: `Recibo de Pago - Óptica HL (Orden: ${folioOrden})`,
-      html: `
-        <div style="background-color: #f4f4f4; padding: 20px; font-family: 'Courier New', Courier, monospace;">
-          <div style="max-width: 340px; margin: auto; background: #ffffff; padding: 20px; border: 1px solid #ddd; border-radius: 4px; text-align: center; color: #000;">
-            
-            <h2 style="margin: 0; font-size: 20px; font-weight: bold;">ÓPTICA HL</h2>
-            <p style="margin: 5px 0 10px 0; font-size: 13px;">Ticket de Ventas y Pagos</p>
-            <div style="border-top: 1px dashed #000; margin: 10px 0;"></div>
-
-            <div style="text-align: left; font-size: 12px; line-height: 1.4;">
-              <p style="margin: 2px 0;"><b>Folio:</b> ${folioOrden}</p>
-              <p style="margin: 2px 0;"><b>Cliente:</b> ${nombreCliente}</p>
-              <p style="margin: 2px 0;"><b>Estado:</b> ${orden.estatus}</p>
-              <p style="margin: 2px 0;"><b>Fecha Emisión:</b> ${fechaEmision}</p>
-            </div>
-
-            <div style="border-top: 1px dashed #000; margin: 10px 0;"></div>
-
-            <div style="text-align: left; font-size: 12px;">
-              <p style="margin-bottom: 5px; font-weight: bold; text-decoration: underline;">DETALLE DE COMPRA:</p>
-              ${filasArticulosHTML}
-            </div>
-
-            <div style="border-top: 1px dashed #000; margin: 10px 0;"></div>
-
-            <div style="text-align: left; font-size: 12px;">
-              <p style="margin-bottom: 5px; font-weight: bold; text-decoration: underline;">FORMAS DE PAGO APLICADAS:</p>
-              ${filasPagosHTML}
-            </div>
-
-            <div style="border-top: 1px dashed #000; margin: 10px 0;"></div>
-
-            <div style="text-align: left; font-size: 13px; font-weight: bold; line-height: 1.5;">
-              <p style="margin: 2px 0;">TOTAL GENERAL: $${totalGeneral.toFixed(2)}</p>
-              <p style="margin: 2px 0;">TOTAL PAGADO:  $${totalPagado.toFixed(2)}</p>
-              <p style="margin: 2px 0; color: #d9534f;">SALDO PENDIENTE: $${saldoRestante.toFixed(2)}</p>
-            </div>
-
-            <div style="border-top: 1px dashed #000; margin: 10px 0;"></div>
-
-            <p style="margin: 10px 0 0 0; font-size: 12px; font-weight: bold;">¡Gracias por su compra!</p>
-          </div>
-        </div>
-      `,
-    };
-
-    await transporter.sendMail(mailOptions);
   } catch (error) {
     console.error("Error enviando recibo estilo ticket:", error.message);
   }

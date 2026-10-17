@@ -19,6 +19,8 @@ const facturacionRoutes = require('./routes/facturacion.routes');
 const sucursalRoutes = require('./routes/sucursal.routes');
 const descuentoRoutes = require('./routes/descuento.routes');
 const ordenReparacionRoutes = require('./routes/ordenreparacion.routes'); // Asegúrate de tener este archivo de rutas
+const soporteRoutes = require('./routes/soporte.routes');
+const correoService = require('./services/correo.service');
 
 const app = express();
 
@@ -50,6 +52,54 @@ app.use('/api/sucursales', sucursalRoutes);
 app.use('/api/descuento', descuentoRoutes);
 app.use('/api/descuentos', descuentoRoutes);
 app.use('/api/ordenes/reparacion', ordenReparacionRoutes);
+app.use('/api/soporte', soporteRoutes);
+
+// ==========================================
+// MANEJADOR GLOBAL DE ERRORES CON ALERTA POR CORREO
+// ==========================================
+app.use((err, req, res, next) => {
+    console.error('💥 [Server Error]:', err);
+    
+    // Notificación asíncrona a soporte sin bloquear la respuesta
+    correoService.notificarFallaSistema({
+        error: err,
+        metodo: req.method,
+        ruta: req.originalUrl,
+        operador: req.usuario || null,
+        body: req.body
+    }).catch(emailErr => {
+        console.warn('⚠️ No se pudo enviar correo de alerta de falla:', emailErr.message);
+    });
+
+    res.status(500).json({
+        ok: false,
+        error: 'Ocurrió un error inesperado en el servidor. El equipo de soporte ha sido notificado.'
+    });
+});
+
+// Captura de errores no controlados a nivel de proceso
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 [Unhandled Rejection]:', reason);
+    correoService.notificarFallaSistema({
+        error: reason instanceof Error ? reason : new Error(String(reason)),
+        metodo: 'PROCESO',
+        ruta: 'unhandledRejection',
+        operador: null,
+        body: null
+    }).catch(() => {});
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('💥 [Uncaught Exception]:', err);
+    correoService.notificarFallaSistema({
+        error: err,
+        metodo: 'PROCESO',
+        ruta: 'uncaughtException',
+        operador: null,
+        body: null
+    }).catch(() => {});
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Servidor backend corriendo en http://localhost:${PORT}`);

@@ -2,13 +2,18 @@ const pool = require('../config/db');
 const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+const getVentasTransporter = () => {
+  const user = process.env.MAIL_VENTAS_USER || process.env.EMAIL_USER;
+  const pass = process.env.MAIL_VENTAS_PASS || process.env.EMAIL_PASS;
+  if (!user || !pass) return null;
+  return {
+    transporter: nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user, pass }
+    }),
+    user
+  };
+};
 
 // 1. Crear Orden de Reparación
 exports.crearOrdenReparacion = async (req, res) => {
@@ -37,27 +42,30 @@ exports.crearOrdenReparacion = async (req, res) => {
 
     // Notificación por Correo
     if (email_cliente) {
-      const mailOptions = {
-        from: '"Óptica HL" <no-reply@opticahl.com>',
-        to: email_cliente,
-        subject: `Orden de Reparación #${id_reparacion} - Óptica HL`,
-        html: `
-          <div style="font-family: Arial, sans-serif; color: #333;">
-            <h2 style="color: #008020;">¡Hola! Tu orden de reparación ha sido registrada</h2>
-            <p><strong>Folio de Servicio:</strong> #${id_reparacion}</p>
-            <p><strong>Armazón:</strong> ${armazon || 'Genérico'}</p>
-            <p><strong>Detalles:</strong> ${observaciones}</p>
-            <p style="font-size: 1.1em;"><strong>Total a pagar en Caja:</strong> $${Number(total).toFixed(2)}</p>
-            <hr>
-            <p>Puedes pasar a caja para realizar tu pago. ¡Gracias por tu preferencia!</p>
-          </div>
-        `
-      };
+      const mailConfig = getVentasTransporter();
+      if (mailConfig) {
+        const mailOptions = {
+          from: `"Óptica HL" <${mailConfig.user}>`,
+          to: email_cliente,
+          subject: `Orden de Reparación #${id_reparacion} - Óptica HL`,
+          html: `
+            <div style="font-family: Arial, sans-serif; color: #333;">
+              <h2 style="color: #008020;">¡Hola! Tu orden de reparación ha sido registrada</h2>
+              <p><strong>Folio de Servicio:</strong> #${id_reparacion}</p>
+              <p><strong>Armazón:</strong> ${armazon || 'Genérico'}</p>
+              <p><strong>Detalles:</strong> ${observaciones}</p>
+              <p style="font-size: 1.1em;"><strong>Total a pagar en Caja:</strong> $${Number(total).toFixed(2)}</p>
+              <hr>
+              <p>Puedes pasar a caja para realizar tu pago. ¡Gracias por tu preferencia!</p>
+            </div>
+          `
+        };
 
-      transporter.sendMail(mailOptions, (err) => {
-        if (err) console.error('Error al enviar correo:', err);
-        else console.log(`📧 Correo enviado a ${email_cliente}`);
-      });
+        mailConfig.transporter.sendMail(mailOptions, (err) => {
+          if (err) console.error('Error al enviar correo:', err);
+          else console.log(`📧 Correo enviado a ${email_cliente}`);
+        });
+      }
     }
 
     res.status(201).json({
