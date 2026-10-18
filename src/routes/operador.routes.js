@@ -17,26 +17,22 @@ const validarCampos = (req, res, next) => {
 };
 
 // ==========================================
-// 🛡️ SEGURIDAD GLOBAL PARA ESTE MÓDULO
 // ==========================================
-
-// Descomenta estas dos líneas de abajo si quieres que todo el módulo de operadores 
-// esté protegido y sea exclusivo para el ADMINISTRADOR:
-// router.use(verifyToken);
-// router.use(checkRole(['ADMINISTRADOR']));
+// 🛡️ SEGURIDAD GLOBAL PARA ESTE MÓDULO (Exclusivo ADMINISTRADOR)
+// ==========================================
+router.use(verifyToken);
+router.use(checkRole(['ADMINISTRADOR']));
 
 // ==========================================
 // 👥 RUTAS DEL MÓDULO OPERADORES
 // ==========================================
 
 // 0. Obtener catálogos de roles y sucursales
-router.get('/catalogos', verifyToken, operadorController.obtenerCatalogosOperador);
+router.get('/catalogos', operadorController.obtenerCatalogosOperador);
 
-// 1. Registrar un nuevo operador (Mantiene las validaciones de tu compañera)
+// 1. Registrar un nuevo operador
 router.post('/', 
     [
-        //verifyToken,                       
-        //checkRole(['ADMINISTRADOR']),      
         check('nombre_completo', 'El nombre es obligatorio y debe ser texto').not().isEmpty().trim().escape(),
         check('usuario_login', 'El nombre de usuario es obligatorio').not().isEmpty().trim(),
         check('password', 'La contraseña debe tener al menos 6 caracteres').isLength({ min: 6 }),

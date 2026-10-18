@@ -4,10 +4,9 @@ const router = express.Router();
 const ordenController = require('../controllers/orden.controller');
 const cajaController = require('../controllers/caja.controller');
 
-// 💡 IMPORTANTE: Si usas middlewares globales en server.js o auth.middleware.js,
-// define aquí tus funciones de verificación (o impórtalas como las tenías en tu proyecto original)
-const verifyToken = (req, res, next) => next(); 
-const checkRole = (roles) => (req, res, next) => next();
+// 🛡️ Middlewares reales de autenticación y autorización
+const { verifyToken } = require('../middlewares/auth.middleware');
+const { checkRole } = require('../middlewares/rol.middleware');
 
 /**
  * =====================================================================

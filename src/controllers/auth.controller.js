@@ -73,7 +73,10 @@ const login = async (req, res) => {
         });
     } catch (error) {
         console.error("Error en login:", error);
-        return res.status(500).json({ message: "Error interno.", detalle: error.message });
+        return res.status(500).json({ 
+            message: "Error interno en el servidor de autenticación.",
+            detalle: process.env.NODE_ENV === 'development' ? error.message : undefined 
+        });
     }
 };
 
