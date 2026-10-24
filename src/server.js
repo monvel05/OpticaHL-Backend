@@ -43,8 +43,17 @@ const defaultOrigins = [
     'http://127.0.0.1:4200'
 ];
 
+const normalizeOrigin = (item) => {
+    try {
+        if (!item.startsWith('http://') && !item.startsWith('https://')) return item.replace(/\/+$/, '');
+        return new URL(item).origin;
+    } catch {
+        return item.replace(/\/+$/, '');
+    }
+};
+
 const envOrigins = process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => normalizeOrigin(o.trim())).filter(Boolean)
     : [];
 
 const allowedOrigins = [...defaultOrigins, ...envOrigins];
