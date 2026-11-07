@@ -452,8 +452,8 @@ const asegurarTablaSolicitudes = async () => {
       id_solicitud INT AUTO_INCREMENT PRIMARY KEY,
       folio VARCHAR(50) UNIQUE NOT NULL,
       id_articulo INT NOT NULL,
-      id_sucursal_origen VARCHAR(10) NOT NULL,
-      id_sucursal_destino VARCHAR(10) NOT NULL,
+      id_sucursal_origen VARCHAR(50) NOT NULL,
+      id_sucursal_destino VARCHAR(50) NOT NULL,
       cantidad INT NOT NULL DEFAULT 1,
       id_operador_solicita INT NULL,
       id_operador_autoriza INT NULL,
@@ -463,8 +463,8 @@ const asegurarTablaSolicitudes = async () => {
       fecha_autorizacion DATETIME NULL,
       fecha_recepcion DATETIME NULL,
       CONSTRAINT fk_traslado_art FOREIGN KEY (id_articulo) REFERENCES articulos(id_articulo),
-      CONSTRAINT fk_traslado_suc_orig FOREIGN KEY (id_sucursal_origen) REFERENCES sucursales(id_sucursal),
-      CONSTRAINT fk_traslado_suc_dest FOREIGN KEY (id_sucursal_destino) REFERENCES sucursales(id_sucursal)
+      INDEX idx_traslado_orig (id_sucursal_origen),
+      INDEX idx_traslado_dest (id_sucursal_destino)
     ) ENGINE=InnoDB;
   `;
   await pool.query(createTableSQL).catch(err => console.warn('Aviso crear solicitudes_traslado:', err.message));
