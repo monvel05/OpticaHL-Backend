@@ -15,6 +15,7 @@ const obtenerSucursales = async (req, res) => {
         id_sucursal, 
         nombre, 
         direccion, 
+        telefono,
         activo 
       FROM sucursales 
       WHERE 1=1
@@ -30,9 +31,9 @@ const obtenerSucursales = async (req, res) => {
     }
 
     if (busqueda && busqueda.trim() !== '') {
-      query += ` AND (id_sucursal LIKE ? OR nombre LIKE ? OR direccion LIKE ?)`;
+      query += ` AND (id_sucursal LIKE ? OR nombre LIKE ? OR direccion LIKE ? OR telefono LIKE ?)`;
       const term = `%${busqueda.trim()}%`;
-      params.push(term, term, term);
+      params.push(term, term, term, term);
     }
 
     query += ` ORDER BY id_sucursal ASC`;
@@ -42,6 +43,7 @@ const obtenerSucursales = async (req, res) => {
     // Convertir activo a booleano explícito
     const sucursalesFormateadas = rows.map(s => ({
       ...s,
+      telefono: s.telefono || '',
       activo: Boolean(s.activo)
     }));
 
@@ -64,7 +66,7 @@ const obtenerSucursalPorId = async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      'SELECT id_sucursal, nombre, direccion, activo FROM sucursales WHERE id_sucursal = ?',
+      'SELECT id_sucursal, nombre, direccion, telefono, activo FROM sucursales WHERE id_sucursal = ?',
       [id]
     );
 
@@ -77,6 +79,7 @@ const obtenerSucursalPorId = async (req, res) => {
 
     const sucursal = {
       ...rows[0],
+      telefono: rows[0].telefono || '',
       activo: Boolean(rows[0].activo)
     };
 
@@ -95,7 +98,7 @@ const obtenerSucursalPorId = async (req, res) => {
 
 // Crear una nueva sucursal
 const crearSucursal = async (req, res) => {
-  let { id_sucursal, nombre, direccion, activo } = req.body;
+  let { id_sucursal, nombre, direccion, telefono, activo } = req.body;
 
   if (!id_sucursal || !nombre) {
     return res.status(400).json({
@@ -107,6 +110,7 @@ const crearSucursal = async (req, res) => {
   id_sucursal = String(id_sucursal).trim().toUpperCase();
   nombre = String(nombre).trim();
   direccion = direccion ? String(direccion).trim() : '';
+  telefono = telefono ? String(telefono).trim() : '';
   const estadoActivo = (activo === undefined || activo === null) ? 1 : (activo ? 1 : 0);
 
   try {
@@ -124,10 +128,10 @@ const crearSucursal = async (req, res) => {
     }
 
     const query = `
-      INSERT INTO sucursales (id_sucursal, nombre, direccion, activo)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO sucursales (id_sucursal, nombre, direccion, telefono, activo)
+      VALUES (?, ?, ?, ?, ?)
     `;
-    await pool.query(query, [id_sucursal, nombre, direccion, estadoActivo]);
+    await pool.query(query, [id_sucursal, nombre, direccion, telefono, estadoActivo]);
 
     return res.status(201).json({
       exito: true,
@@ -136,6 +140,7 @@ const crearSucursal = async (req, res) => {
         id_sucursal,
         nombre,
         direccion,
+        telefono,
         activo: Boolean(estadoActivo)
       }
     });
@@ -151,7 +156,7 @@ const crearSucursal = async (req, res) => {
 // Actualizar datos de una sucursal existente
 const actualizarSucursal = async (req, res) => {
   const { id } = req.params;
-  let { nombre, direccion, activo } = req.body;
+  let { nombre, direccion, telefono, activo } = req.body;
 
   if (!nombre) {
     return res.status(400).json({
@@ -162,15 +167,16 @@ const actualizarSucursal = async (req, res) => {
 
   nombre = String(nombre).trim();
   direccion = direccion ? String(direccion).trim() : '';
+  telefono = telefono ? String(telefono).trim() : '';
   const estadoActivo = (activo === undefined || activo === null) ? 1 : (activo ? 1 : 0);
 
   try {
     const query = `
       UPDATE sucursales 
-      SET nombre = ?, direccion = ?, activo = ? 
+      SET nombre = ?, direccion = ?, telefono = ?, activo = ? 
       WHERE id_sucursal = ?
     `;
-    const [result] = await pool.query(query, [nombre, direccion, estadoActivo, id]);
+    const [result] = await pool.query(query, [nombre, direccion, telefono, estadoActivo, id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
@@ -186,6 +192,7 @@ const actualizarSucursal = async (req, res) => {
         id_sucursal: id,
         nombre,
         direccion,
+        telefono,
         activo: Boolean(estadoActivo)
       }
     });
