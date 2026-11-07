@@ -46,6 +46,28 @@ async function migrate() {
     `).catch((err) => console.warn('Advertencia al insertar proveedor default:', err.message));
     console.log('✅ Proveedor default (id 1) verificado/asegurado');
 
+    // 5. Agregar columnas adicionales a proveedores si no existen
+    const [provCols] = await pool.query('SHOW COLUMNS FROM proveedores');
+    const provColNames = new Set(provCols.map(c => c.Field));
+    const columnasProveedores = [
+      { name: 'tipo_cliente', def: 'VARCHAR(50) NULL DEFAULT "Negocio"' },
+      { name: 'razon_social', def: 'VARCHAR(150) NULL' },
+      { name: 'colonia', def: 'VARCHAR(100) NULL' },
+      { name: 'localidad', def: 'VARCHAR(100) NULL' },
+      { name: 'estado', def: 'VARCHAR(100) NULL' },
+      { name: 'cp', def: 'VARCHAR(10) NULL' },
+      { name: 'tel_negocio', def: 'VARCHAR(30) NULL' },
+      { name: 'celular', def: 'VARCHAR(30) NULL' },
+      { name: 'observaciones', def: 'TEXT NULL' }
+    ];
+
+    for (const col of columnasProveedores) {
+      if (!provColNames.has(col.name)) {
+        await pool.query(`ALTER TABLE proveedores ADD COLUMN ${col.name} ${col.def}`).catch(() => {});
+        console.log(`✅ Columna ${col.name} agregada a proveedores`);
+      }
+    }
+
     console.log('🎉 Migración completada.');
     process.exit(0);
   } catch (error) {

@@ -28,13 +28,42 @@ const obtenerProveedores = async (req, res) => {
     }
 };
 
+// Filtrar dinámicamente columnas existentes en la tabla proveedores
+const filtrarCamposProveedor = async (body, esActualizacion = false) => {
+    const [cols] = await pool.query('SHOW COLUMNS FROM proveedores');
+    const validCols = new Set(cols.map(c => c.Field));
+
+    const datos = {};
+    for (const [key, val] of Object.entries(body)) {
+        if (validCols.has(key)) {
+            datos[key] = val;
+        }
+    }
+
+    // Mapeos inteligentes para asegurar compatibilidad
+    if (validCols.has('nombre') && !datos.nombre) {
+        datos.nombre = body.nombre || body.razon_social || '';
+    }
+    if (validCols.has('razon_social') && !datos.razon_social) {
+        datos.razon_social = body.razon_social || body.nombre || '';
+    }
+    if (validCols.has('telefono') && !datos.telefono) {
+        datos.telefono = body.telefono || body.tel_negocio || body.celular || null;
+    }
+    if (!esActualizacion && validCols.has('activo') && datos.activo === undefined) {
+        datos.activo = 1;
+    }
+
+    return datos;
+};
+
 // Crear nuevo proveedor
 const crearProveedor = async (req, res) => {
     try {
-        const datosProveedor = {
-            ...req.body,
-            nombre: req.body.nombre || req.body.razon_social || ''
-        };
+        const datosProveedor = await filtrarCamposProveedor(req.body, false);
+        if (!datosProveedor.nombre && !datosProveedor.razon_social) {
+            return res.status(400).json({ success: false, message: 'El nombre o razón social es requerido.' });
+        }
 
         const [result] = await pool.query('INSERT INTO proveedores SET ?', [datosProveedor]);
         res.status(201).json({
@@ -52,7 +81,12 @@ const crearProveedor = async (req, res) => {
 const actualizarProveedor = async (req, res) => {
     const { id } = req.params;
     try {
-        const [result] = await pool.query('UPDATE proveedores SET ? WHERE id_proveedor = ?', [req.body, id]);
+        const datosProveedor = await filtrarCamposProveedor(req.body, true);
+        if (Object.keys(datosProveedor).length === 0) {
+            return res.status(400).json({ success: false, message: 'No hay datos válidos para actualizar.' });
+        }
+
+        const [result] = await pool.query('UPDATE proveedores SET ? WHERE id_proveedor = ?', [datosProveedor, id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ success: false, message: 'Proveedor no encontrado' });
