@@ -446,6 +446,30 @@ const buscadorUniversal = async (req, res) => {
 // 📦 SOLICITUDES DE TRASLADO ENTRE SUCURSALES
 // ==========================================
 
+const asegurarTablaSolicitudes = async () => {
+  const createTableSQL = `
+    CREATE TABLE IF NOT EXISTS solicitudes_traslado (
+      id_solicitud INT AUTO_INCREMENT PRIMARY KEY,
+      folio VARCHAR(50) UNIQUE NOT NULL,
+      id_articulo INT NOT NULL,
+      id_sucursal_origen VARCHAR(10) NOT NULL,
+      id_sucursal_destino VARCHAR(10) NOT NULL,
+      cantidad INT NOT NULL DEFAULT 1,
+      id_operador_solicita INT NULL,
+      id_operador_autoriza INT NULL,
+      estatus ENUM('PENDIENTE', 'ACEPTADA', 'RECHAZADA', 'RECIBIDA') DEFAULT 'PENDIENTE',
+      motivo TEXT NULL,
+      fecha_solicitud TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      fecha_autorizacion DATETIME NULL,
+      fecha_recepcion DATETIME NULL,
+      CONSTRAINT fk_traslado_art FOREIGN KEY (id_articulo) REFERENCES articulos(id_articulo),
+      CONSTRAINT fk_traslado_suc_orig FOREIGN KEY (id_sucursal_origen) REFERENCES sucursales(id_sucursal),
+      CONSTRAINT fk_traslado_suc_dest FOREIGN KEY (id_sucursal_destino) REFERENCES sucursales(id_sucursal)
+    ) ENGINE=InnoDB;
+  `;
+  await pool.query(createTableSQL).catch(err => console.warn('Aviso crear solicitudes_traslado:', err.message));
+};
+
 const crearSolicitudTraslado = async (req, res) => {
   const { id_articulo, id_sucursal_origen, id_sucursal_destino, cantidad, motivo } = req.body;
   const id_operador = req.usuario?.id_operador || req.user?.id_operador || 1;
@@ -550,6 +574,10 @@ const obtenerSolicitudesTraslado = async (req, res) => {
     const [rows] = await pool.query(query, params);
     res.status(200).json({ success: true, data: rows });
   } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      await asegurarTablaSolicitudes();
+      return res.status(200).json({ success: true, data: [] });
+    }
     console.error('Error al obtener solicitudes de traslado:', error);
     res.status(500).json({ success: false, message: 'Error interno al consultar traslados.', detalle: error.message });
   }

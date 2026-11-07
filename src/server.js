@@ -175,7 +175,53 @@ process.on('uncaughtException', (err) => {
     }).catch(() => {});
 });
 
+// Auto-ejecución no bloqueante del esquema de base de datos para producción
+const runSchemaAutoMigration = async () => {
+    try {
+        const pool = require('./config/db');
+        // 1. Crear solicitudes_traslado si no existe
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS solicitudes_traslado (
+            id_solicitud INT AUTO_INCREMENT PRIMARY KEY,
+            folio VARCHAR(50) UNIQUE NOT NULL,
+            id_articulo INT NOT NULL,
+            id_sucursal_origen VARCHAR(10) NOT NULL,
+            id_sucursal_destino VARCHAR(10) NOT NULL,
+            cantidad INT NOT NULL DEFAULT 1,
+            id_operador_solicita INT NULL,
+            id_operador_autoriza INT NULL,
+            estatus ENUM('PENDIENTE', 'ACEPTADA', 'RECHAZADA', 'RECIBIDA') DEFAULT 'PENDIENTE',
+            motivo TEXT NULL,
+            fecha_solicitud TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            fecha_autorizacion DATETIME NULL,
+            fecha_recepcion DATETIME NULL,
+            CONSTRAINT fk_traslado_art FOREIGN KEY (id_articulo) REFERENCES articulos(id_articulo),
+            CONSTRAINT fk_traslado_suc_orig FOREIGN KEY (id_sucursal_origen) REFERENCES sucursales(id_sucursal),
+            CONSTRAINT fk_traslado_suc_dest FOREIGN KEY (id_sucursal_destino) REFERENCES sucursales(id_sucursal)
+          ) ENGINE=InnoDB;
+        `).catch(e => console.warn('Aviso solicitudes_traslado auto:', e.message));
+
+        // 2. Columna telefono en sucursales
+        const [sucCols] = await pool.query("SHOW COLUMNS FROM sucursales LIKE 'telefono'").catch(() => [[]]);
+        if (sucCols && sucCols.length === 0) {
+            await pool.query("ALTER TABLE sucursales ADD COLUMN telefono VARCHAR(20) AFTER direccion").catch(() => {});
+        }
+
+        // 3. Proveedor por defecto
+        await pool.query(`
+          INSERT INTO proveedores (id_proveedor, nombre, activo) 
+          VALUES (1, 'Proveedor General', 1) 
+          ON DUPLICATE KEY UPDATE activo = 1
+        `).catch(() => {});
+
+        console.log('✅ Verificación automática de tablas y columnas completada.');
+    } catch (e) {
+        console.warn('Aviso en runSchemaAutoMigration:', e.message);
+    }
+};
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Servidor backend corriendo en http://localhost:${PORT}`);
+    runSchemaAutoMigration();
 });
