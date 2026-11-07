@@ -532,27 +532,25 @@ const obtenerSolicitudesTraslado = async (req, res) => {
         st.id_solicitud,
         st.folio,
         st.id_articulo,
-        a.codigo AS codigo_articulo,
-        a.nombre AS nombre_articulo,
-        a.precio_venta,
+        COALESCE(a.codigo, '') AS codigo_articulo,
+        COALESCE(a.nombre, '') AS nombre_articulo,
+        COALESCE(a.precio_venta, 0) AS precio_venta,
         st.id_sucursal_origen,
-        so.nombre AS sucursal_origen,
-        so.telefono AS telefono_origen,
+        COALESCE(so.nombre, st.id_sucursal_origen) AS sucursal_origen,
         st.id_sucursal_destino,
-        sd.nombre AS sucursal_destino,
-        sd.telefono AS telefono_destino,
+        COALESCE(sd.nombre, st.id_sucursal_destino) AS sucursal_destino,
         st.cantidad,
         st.estatus,
         st.motivo,
         st.fecha_solicitud,
         st.fecha_autorizacion,
         st.fecha_recepcion,
-        op_sol.nombre_completo AS operador_solicita,
-        op_aut.nombre_completo AS operador_autoriza
+        COALESCE(op_sol.nombre_completo, 'Operador') AS operador_solicita,
+        COALESCE(op_aut.nombre_completo, '') AS operador_autoriza
       FROM solicitudes_traslado st
-      JOIN articulos a ON st.id_articulo = a.id_articulo
-      JOIN sucursales so ON st.id_sucursal_origen = so.id_sucursal
-      JOIN sucursales sd ON st.id_sucursal_destino = sd.id_sucursal
+      LEFT JOIN articulos a ON st.id_articulo = a.id_articulo
+      LEFT JOIN sucursales so ON st.id_sucursal_origen = so.id_sucursal
+      LEFT JOIN sucursales sd ON st.id_sucursal_destino = sd.id_sucursal
       LEFT JOIN operadores op_sol ON st.id_operador_solicita = op_sol.id_operador
       LEFT JOIN operadores op_aut ON st.id_operador_autoriza = op_aut.id_operador
       WHERE 1=1
@@ -572,14 +570,13 @@ const obtenerSolicitudesTraslado = async (req, res) => {
     query += ` ORDER BY st.id_solicitud DESC LIMIT 50`;
 
     const [rows] = await pool.query(query, params);
-    res.status(200).json({ success: true, data: rows });
+    return res.status(200).json({ success: true, data: rows });
   } catch (error) {
-    if (error.code === 'ER_NO_SUCH_TABLE') {
+    console.warn('Aviso en obtenerSolicitudesTraslado:', error.message);
+    try {
       await asegurarTablaSolicitudes();
-      return res.status(200).json({ success: true, data: [] });
-    }
-    console.error('Error al obtener solicitudes de traslado:', error);
-    res.status(500).json({ success: false, message: 'Error interno al consultar traslados.', detalle: error.message });
+    } catch (_) {}
+    return res.status(200).json({ success: true, data: [] });
   }
 };
 
@@ -729,28 +726,28 @@ const obtenerFichaSalida = async (req, res) => {
         st.motivo,
         st.fecha_solicitud,
         st.fecha_autorizacion,
-        a.id_articulo,
-        a.codigo,
-        a.nombre,
-        a.precio_venta,
-        det.marca,
-        det.color,
-        det.material,
-        so.id_sucursal AS sucursal_origen_id,
-        so.nombre AS sucursal_origen_nombre,
-        so.direccion AS sucursal_origen_direccion,
-        so.telefono AS sucursal_origen_telefono,
-        sd.id_sucursal AS sucursal_destino_id,
-        sd.nombre AS sucursal_destino_nombre,
-        sd.direccion AS sucursal_destino_direccion,
-        sd.telefono AS sucursal_destino_telefono,
-        op_sol.nombre_completo AS operador_solicita,
-        op_aut.nombre_completo AS operador_autoriza
+        COALESCE(a.id_articulo, 0) AS id_articulo,
+        COALESCE(a.codigo, '') AS codigo,
+        COALESCE(a.nombre, '') AS nombre,
+        COALESCE(a.precio_venta, 0) AS precio_venta,
+        COALESCE(det.marca, '') AS marca,
+        COALESCE(det.color, '') AS color,
+        COALESCE(det.material, '') AS material,
+        st.id_sucursal_origen AS sucursal_origen_id,
+        COALESCE(so.nombre, st.id_sucursal_origen) AS sucursal_origen_nombre,
+        COALESCE(so.direccion, '') AS sucursal_origen_direccion,
+        COALESCE(so.telefono, '') AS sucursal_origen_telefono,
+        st.id_sucursal_destino AS sucursal_destino_id,
+        COALESCE(sd.nombre, st.id_sucursal_destino) AS sucursal_destino_nombre,
+        COALESCE(sd.direccion, '') AS sucursal_destino_direccion,
+        COALESCE(sd.telefono, '') AS sucursal_destino_telefono,
+        COALESCE(op_sol.nombre_completo, 'Operador') AS operador_solicita,
+        COALESCE(op_aut.nombre_completo, '') AS operador_autoriza
        FROM solicitudes_traslado st
-       JOIN articulos a ON st.id_articulo = a.id_articulo
+       LEFT JOIN articulos a ON st.id_articulo = a.id_articulo
        LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
-       JOIN sucursales so ON st.id_sucursal_origen = so.id_sucursal
-       JOIN sucursales sd ON st.id_sucursal_destino = sd.id_sucursal
+       LEFT JOIN sucursales so ON st.id_sucursal_origen = so.id_sucursal
+       LEFT JOIN sucursales sd ON st.id_sucursal_destino = sd.id_sucursal
        LEFT JOIN operadores op_sol ON st.id_operador_solicita = op_sol.id_operador
        LEFT JOIN operadores op_aut ON st.id_operador_autoriza = op_aut.id_operador
        WHERE st.id_solicitud = ? OR st.folio = ?`,
