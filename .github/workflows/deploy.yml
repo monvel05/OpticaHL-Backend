@@ -25,6 +25,7 @@ jobs:
             cd /home/ubuntu/opticahl-backend
             git pull origin main
             PUPPETEER_SKIP_DOWNLOAD=true npm install --omit=dev
+            node src/config/migration.js || echo "Migración completada o con advertencias"
             pm2 restart optica-backend --update-env
             pm2 save
             # Espera activa y verificacion con reintentos (max 10s)

@@ -15,11 +15,11 @@ const crearArticulo = async (req, res) => {
   const safeCodigo = codigo || null;
   const safeNombre = nombre || null;
   const safeCategoria = categoria || 'GENERAL';
-  const safeIdProveedor = id_proveedor || 1;
+  let safeIdProveedor = (id_proveedor !== undefined && id_proveedor !== null) ? Number(id_proveedor) : null;
   const safeCosto = Number(costo) || 0.00;
   const safePrecioVenta = Number(precio_venta) || 0.00;
   const safeUnidad = unidad || 'H87';
-  const safeCreadoPor = creado_por || req.user?.id_operador || req.user?.id || 1;
+  let safeCreadoPor = (req.user && (req.user.id_operador || req.user.id)) || creado_por || null;
 
   const safeMarca = marca || null;
   const safeColor = color || null;
@@ -37,6 +37,55 @@ const crearArticulo = async (req, res) => {
 
   try {
     await conexion.beginTransaction();
+
+    // 1. Resolver y validar id_proveedor para evitar fallos de Foreign Key
+    if (safeIdProveedor) {
+      const [provRows] = await conexion.query(
+        'SELECT id_proveedor FROM proveedores WHERE id_proveedor = ?',
+        [safeIdProveedor]
+      ).catch(() => [[]]);
+      if (!provRows || provRows.length === 0) {
+        safeIdProveedor = null;
+      }
+    }
+
+    if (!safeIdProveedor) {
+      const [primerProv] = await conexion.query(
+        'SELECT id_proveedor FROM proveedores WHERE activo = 1 ORDER BY id_proveedor ASC LIMIT 1'
+      ).catch(async () => await conexion.query('SELECT id_proveedor FROM proveedores ORDER BY id_proveedor ASC LIMIT 1'))
+       .catch(() => [[]]);
+
+      if (primerProv && primerProv.length > 0) {
+        safeIdProveedor = primerProv[0].id_proveedor;
+      } else {
+        try {
+          const [resNuevoProv] = await conexion.query(
+            "INSERT INTO proveedores (nombre, activo) VALUES ('Proveedor General', 1)"
+          );
+          safeIdProveedor = resNuevoProv.insertId;
+        } catch {
+          safeIdProveedor = null;
+        }
+      }
+    }
+
+    // 2. Resolver y validar creado_por (operador existente)
+    if (safeCreadoPor) {
+      const [opRows] = await conexion.query(
+        'SELECT id_operador FROM operadores WHERE id_operador = ?',
+        [safeCreadoPor]
+      ).catch(() => [[]]);
+      if (!opRows || opRows.length === 0) {
+        safeCreadoPor = null;
+      }
+    }
+
+    if (!safeCreadoPor) {
+      const [primerOp] = await conexion.query(
+        'SELECT id_operador FROM operadores WHERE activo = 1 ORDER BY id_operador ASC LIMIT 1'
+      ).catch(() => [[]]);
+      safeCreadoPor = (primerOp && primerOp.length > 0) ? primerOp[0].id_operador : 1;
+    }
 
     const queryArticulo = `
             INSERT INTO articulos (codigo, nombre, categoria, id_proveedor, costo, precio_venta, unidad, creado_por)

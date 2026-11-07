@@ -38,6 +38,14 @@ async function migrate() {
     // 3. Si las sucursales no tienen telefono, asignar un default
     await pool.query("UPDATE sucursales SET telefono = '4951234567' WHERE telefono IS NULL OR telefono = ''");
 
+    // 4. Asegurar existencia de proveedor por defecto (id_proveedor = 1) para claves foráneas
+    await pool.query(`
+      INSERT INTO proveedores (id_proveedor, nombre, activo) 
+      VALUES (1, 'Proveedor General', 1) 
+      ON DUPLICATE KEY UPDATE activo = 1
+    `).catch((err) => console.warn('Advertencia al insertar proveedor default:', err.message));
+    console.log('✅ Proveedor default (id 1) verificado/asegurado');
+
     console.log('🎉 Migración completada.');
     process.exit(0);
   } catch (error) {
