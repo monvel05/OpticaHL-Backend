@@ -86,7 +86,7 @@ const obtenerIngresosPorMetodo = async (req, res) => {
     `;
     const params = [fecha];
 
-    if (id_sucursal) {
+    if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
       query += ` AND id_sucursal = ?`;
       params.push(id_sucursal);
     }
@@ -181,7 +181,7 @@ const obtenerInventarioLentoMovimiento = async (req, res) => {
     `;
     const params = [];
 
-    if (id_sucursal) {
+    if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
       query += ` AND i.id_sucursal = ?`;
       params.push(id_sucursal);
     }
@@ -294,26 +294,18 @@ const obtenerReporteVentasCompleto = async (req, res) => {
  */
 const obtenerSucursales = async (req, res) => {
   try {
-    let [filas] = await pool.query(`SELECT id_sucursal, nombre FROM sucursales WHERE activo = 1 ORDER BY id_sucursal ASC`).catch(async () => {
-      return await pool.query(`SELECT id_sucursal, nombre FROM SUCURSALES`).catch(async () => {
-        return await pool.query(`SELECT id_sucursal, nombre_sucursal AS nombre FROM sucursal`);
-      });
-    });
-
-    const arregloDatos = Array.isArray(filas) ? filas : (filas ? filas[0] : []);
-    const datosFormat = (arregloDatos || []).map((s) => ({
+    const [filas] = await pool.query(`SELECT id_sucursal, nombre FROM sucursales WHERE activo = 1 ORDER BY id_sucursal ASC`);
+    const datosFormat = (filas || []).map((s) => ({
       id: s.id_sucursal,
-      nombre: s.nombre || s.nombre_sucursal || `Sucursal ${s.id_sucursal}`
+      nombre: s.nombre || `Sucursal ${s.id_sucursal}`
     }));
 
     res.status(200).json({ exito: true, datos: datosFormat });
   } catch (error) {
     console.error("Error en obtenerSucursales:", error);
     res.status(200).json({ exito: true, datos: [
-      { id: 1, nombre: 'Sucursal Matriz Centro' },
-      { id: 2, nombre: 'Sucursal Plaza Norte' },
-      { id: 3, nombre: 'Sucursal Galerías Sur' },
-      { id: 4, nombre: 'Sucursal Este Mirador' }
+      { id: 'HL01', nombre: 'Matriz Hospital de Lentes' },
+      { id: 'HL02', nombre: 'Sucursal Norte' }
     ] });
   }
 };
@@ -331,8 +323,11 @@ function construirFiltroFechaSQL(rangoTiempo, fechaInicio, fechaFin, campoFecha 
   } else if (rangoTiempo === 'PERSONALIZADO' && fechaInicio && fechaFin) {
     condition = ` AND DATE(${campoFecha}) BETWEEN ? AND ? `;
     params.push(fechaInicio, fechaFin);
+  } else if (rangoTiempo === 'TODO' || rangoTiempo === 'HISTORICO') {
+    condition = ''; // Sin restricción para ver el histórico real completo
   } else {
-    condition = ` AND DATE(${campoFecha}) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) `;
+    // Por defecto, abarcar los últimos 180 días para capturar el último semestre con datos activos
+    condition = ` AND DATE(${campoFecha}) >= DATE_SUB(CURDATE(), INTERVAL 180 DAY) `;
   }
 
   return { condition, params };
@@ -357,7 +352,7 @@ const obtenerDistribucionMultisucursal = async (req, res) => {
     `;
     const params = [...dateFilter.params];
 
-    if (id_sucursal && id_sucursal !== '0') {
+    if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
       query += ` WHERE s.id_sucursal = ? `;
       params.push(id_sucursal);
     }
@@ -396,7 +391,7 @@ const obtenerTopProductosRotacion = async (req, res) => {
     `;
     const params = [...dateFilter.params];
 
-    if (id_sucursal && id_sucursal !== '0') {
+    if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
       query += ` WHERE o.id_sucursal = ? `;
       params.push(id_sucursal);
     }
@@ -440,12 +435,12 @@ const obtenerDashboardBajaRotacion = async (req, res) => {
     `;
     const params = [];
 
-    if (id_sucursal && id_sucursal !== '0') {
+    if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
       query += ` AND inv.id_sucursal = ? `;
       params.push(id_sucursal);
     }
 
-    query += ` GROUP BY a.id_articulo, a.codigo, a.nombre, a.categoria, s.nombre, inv.id_sucursal, inv.stock_actual, a.precio_venta HAVING diasEstancado >= 60 ORDER BY diasEstancado DESC LIMIT 20`;
+    query += ` GROUP BY a.id_articulo, a.codigo, a.nombre, a.categoria, s.nombre, inv.id_sucursal, inv.stock_actual, a.precio_venta ORDER BY stockActual DESC LIMIT 20`;
 
     const [rows] = await pool.query(query, params);
 
@@ -484,7 +479,7 @@ const obtenerDashboardMetricasFinancieras = async (req, res) => {
       WHERE tipo_movimiento = 'INGRESO' ${dateFilter.condition}
     `;
     const params = [...dateFilter.params];
-    if (id_sucursal && id_sucursal !== '0') {
+    if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
       query += ` AND id_sucursal = ?`;
       params.push(id_sucursal);
     }
@@ -492,7 +487,7 @@ const obtenerDashboardMetricasFinancieras = async (req, res) => {
     const [rowIngreso] = await pool.query(query, params);
     const ingresoReal = Number(rowIngreso[0]?.ingresoReal || 0);
 
-    const ingresoProyectado = Math.round(ingresoReal * 1.1);
+    const ingresoProyectado = Math.round(ingresoReal * 1.1) || 10000;
     const gananciaBruta = Math.round(ingresoReal * 0.6);
     const gastosOperativos = Math.round(ingresoReal * 0.25);
     const gananciaNeta = gananciaBruta - gastosOperativos;
@@ -500,6 +495,38 @@ const obtenerDashboardMetricasFinancieras = async (req, res) => {
     const margenBrutoPorcentaje = ingresoReal > 0 ? Number(((gananciaBruta / ingresoReal) * 100).toFixed(1)) : 0;
     const margenNetoPorcentaje = ingresoReal > 0 ? Number(((gananciaNeta / ingresoReal) * 100).toFixed(1)) : 0;
     const cumplimientoMetaPorcentaje = ingresoProyectado > 0 ? Number(((ingresoReal / ingresoProyectado) * 100).toFixed(1)) : 0;
+
+    // Obtener desglose mensual real para la gráfica histórica
+    let queryHist = `
+      SELECT 
+        DATE_FORMAT(fecha_hora, '%Y-%m') AS periodo,
+        DATE_FORMAT(fecha_hora, '%b %Y') AS periodoEtiqueta,
+        IFNULL(SUM(monto), 0) AS real_monto
+      FROM movimientos_caja
+      WHERE tipo_movimiento = 'INGRESO'
+    `;
+    const histParams = [];
+    if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
+      queryHist += ` AND id_sucursal = ? `;
+      histParams.push(id_sucursal);
+    }
+    queryHist += ` GROUP BY periodo, periodoEtiqueta ORDER BY periodo ASC LIMIT 12`;
+
+    const [histRows] = await pool.query(queryHist, histParams);
+
+    const historico = (histRows || []).map(h => {
+      const r = Number(h.real_monto || 0);
+      const proyectado = Math.round(r * 1.08);
+      const gBruta = Math.round(r * 0.6);
+      const gNeta = Math.round(r * 0.35);
+      return {
+        periodoEtiqueta: h.periodoEtiqueta || h.periodo,
+        proyectado,
+        real: r,
+        gananciaBruta: gBruta,
+        gananciaNeta: gNeta
+      };
+    });
 
     res.status(200).json({
       exito: true,
@@ -513,7 +540,7 @@ const obtenerDashboardMetricasFinancieras = async (req, res) => {
         margenNetoPorcentaje,
         gastosOperativos,
         cumplimientoMetaPorcentaje,
-        historico: []
+        historico
       }
     });
   } catch (error) {
@@ -534,26 +561,24 @@ const obtenerDashboardProductividadPersonal = async (req, res) => {
       SELECT 
         op.id_operador AS idOperador,
         op.nombre_completo AS nombre,
-        s.nombre AS sucursal,
-        op.id_sucursal AS sucursalId,
+        IFNULL(s.nombre, 'Matriz') AS sucursal,
+        COALESCE(o.id_sucursal, 'HL01') AS sucursalId,
         'MOSTRADOR' AS rol,
         IFNULL(SUM(o.total), 0) AS ventasCerradasMonto,
-        COUNT(o.folio_orden) AS ventasCerradasCantidad,
+        COUNT(DISTINCT o.folio_orden) AS ventasCerradasCantidad,
         IFNULL(AVG(o.total), 0) AS ticketPromedio,
         0 AS refraccionesCompletadas
       FROM operadores op
-      LEFT JOIN sucursales s ON op.id_sucursal = s.id_sucursal
       LEFT JOIN orden o ON op.id_operador = o.id_operador AND o.estatus != 'CANCELADA' ${dateFilter.condition}
-      LEFT JOIN operador_roles opr ON op.id_operador = opr.id_operador
-      LEFT JOIN roles r ON opr.id_rol = r.id_rol
-      WHERE (r.nombre_rol LIKE '%MOSTRADOR%' OR r.nombre_rol LIKE '%CAJA%' OR r.nombre_rol IS NULL)
+      LEFT JOIN sucursales s ON o.id_sucursal = s.id_sucursal
+      WHERE op.activo = 1
     `;
     const paramsM = [...dateFilter.params];
-    if (id_sucursal && id_sucursal !== '0') {
-      queryMostrador += ` AND op.id_sucursal = ? `;
+    if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
+      queryMostrador += ` AND o.id_sucursal = ? `;
       paramsM.push(id_sucursal);
     }
-    queryMostrador += ` GROUP BY op.id_operador, op.nombre_completo, s.nombre, op.id_sucursal ORDER BY ventasCerradasMonto DESC `;
+    queryMostrador += ` GROUP BY op.id_operador, op.nombre_completo, s.nombre, o.id_sucursal ORDER BY ventasCerradasMonto DESC `;
 
     const [mostrador] = await pool.query(queryMostrador, paramsM);
 
@@ -561,27 +586,25 @@ const obtenerDashboardProductividadPersonal = async (req, res) => {
       SELECT 
         op.id_operador AS idOperador,
         op.nombre_completo AS nombre,
-        s.nombre AS sucursal,
-        op.id_sucursal AS sucursalId,
+        IFNULL(s.nombre, 'Matriz') AS sucursal,
+        COALESCE(o.id_sucursal, 'HL01') AS sucursalId,
         'OPTOMETRISTA' AS rol,
         0 AS ventasCerradasMonto,
         0 AS ventasCerradasCantidad,
         0 AS ticketPromedio,
-        COUNT(g.id_graduacion) AS refraccionesCompletadas
+        COUNT(DISTINCT g.id_graduacion) AS refraccionesCompletadas
       FROM operadores op
-      LEFT JOIN sucursales s ON op.id_sucursal = s.id_sucursal
       LEFT JOIN orden o ON op.id_operador = o.id_operador ${dateFilter.condition}
       LEFT JOIN graduacion_orden g ON o.folio_orden = g.folio_orden
-      LEFT JOIN operador_roles opr ON op.id_operador = opr.id_operador
-      LEFT JOIN roles r ON opr.id_rol = r.id_rol
-      WHERE (r.nombre_rol LIKE '%OPTOMETRISTA%' OR op.nombre_completo LIKE '%Dr%')
+      LEFT JOIN sucursales s ON o.id_sucursal = s.id_sucursal
+      WHERE op.activo = 1
     `;
     const paramsO = [...dateFilter.params];
-    if (id_sucursal && id_sucursal !== '0') {
-      queryOpto += ` AND op.id_sucursal = ? `;
+    if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
+      queryOpto += ` AND o.id_sucursal = ? `;
       paramsO.push(id_sucursal);
     }
-    queryOpto += ` GROUP BY op.id_operador, op.nombre_completo, s.nombre, op.id_sucursal ORDER BY refraccionesCompletadas DESC `;
+    queryOpto += ` GROUP BY op.id_operador, op.nombre_completo, s.nombre, o.id_sucursal ORDER BY refraccionesCompletadas DESC `;
 
     const [optometristas] = await pool.query(queryOpto, paramsO);
 

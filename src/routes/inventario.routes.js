@@ -10,6 +10,48 @@ const { checkRole } = require('../middlewares/rol.middleware');
 router.use(verifyToken);
 
 // ==========================================
+// 🔍 BUSCADOR UNIVERSAL MULTI-SUCURSAL
+// ==========================================
+router.get(
+  '/buscador-universal',
+  checkRole(['ADMINISTRADOR', 'INVENTARIO', 'CAJA', 'CAJERO', 'CAJER@', 'MOSTRADOR']),
+  inventarioController.buscadorUniversal
+);
+
+// ==========================================
+// 📦 SOLICITUDES DE TRASLADO ENTRE SUCURSALES
+// ==========================================
+router.post(
+  '/solicitudes-traslado',
+  checkRole(['ADMINISTRADOR', 'INVENTARIO', 'MOSTRADOR', 'CAJA']),
+  inventarioController.crearSolicitudTraslado
+);
+
+router.get(
+  '/solicitudes-traslado',
+  checkRole(['ADMINISTRADOR', 'INVENTARIO', 'MOSTRADOR', 'CAJA']),
+  inventarioController.obtenerSolicitudesTraslado
+);
+
+router.put(
+  '/solicitudes-traslado/:id/responder',
+  checkRole(['ADMINISTRADOR', 'INVENTARIO', 'MOSTRADOR', 'CAJA']),
+  inventarioController.responderSolicitudTraslado
+);
+
+router.put(
+  '/solicitudes-traslado/:id/recibir',
+  checkRole(['ADMINISTRADOR', 'INVENTARIO', 'MOSTRADOR', 'CAJA']),
+  inventarioController.recibirSolicitudTraslado
+);
+
+router.get(
+  '/solicitudes-traslado/:id/ficha-salida',
+  checkRole(['ADMINISTRADOR', 'INVENTARIO', 'MOSTRADOR', 'CAJA']),
+  inventarioController.obtenerFichaSalida
+);
+
+// ==========================================
 // RUTAS OPERATIVAS Y DE CONSULTA (CAJA / MOSTRADOR / INVENTARIO)
 // ==========================================
 
@@ -59,7 +101,7 @@ router.put(
   inventarioController.actualizarStock
 );
 
-// 🚚 Transferir/Trasladar stock entre sucursales
+// 🚚 Transferir/Trasladar stock entre sucursales directo
 router.post(
   '/traslado', 
   checkRole(['ADMINISTRADOR', 'INVENTARIO']), 
