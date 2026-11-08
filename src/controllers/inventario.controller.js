@@ -527,56 +527,80 @@ const obtenerSolicitudesTraslado = async (req, res) => {
   const { id_sucursal, estatus } = req.query;
 
   try {
-    let query = `
+    await asegurarTablaSolicitudes();
+
+    let sql = `
       SELECT 
         st.id_solicitud,
         st.folio,
         st.id_articulo,
-        COALESCE(a.codigo, '') AS codigo_articulo,
-        COALESCE(a.nombre, '') AS nombre_articulo,
-        COALESCE(a.precio_venta, 0) AS precio_venta,
         st.id_sucursal_origen,
-        COALESCE(so.nombre, st.id_sucursal_origen) AS sucursal_origen,
         st.id_sucursal_destino,
-        COALESCE(sd.nombre, st.id_sucursal_destino) AS sucursal_destino,
         st.cantidad,
+        st.id_operador_solicita,
+        st.id_operador_autoriza,
         st.estatus,
         st.motivo,
         st.fecha_solicitud,
         st.fecha_autorizacion,
         st.fecha_recepcion,
-        COALESCE(op_sol.nombre_completo, 'Operador') AS operador_solicita,
-        COALESCE(op_aut.nombre_completo, '') AS operador_autoriza
+        COALESCE(a.codigo, '') AS codigo_articulo,
+        COALESCE(a.nombre, 'Artículo #' + st.id_articulo) AS nombre_articulo,
+        COALESCE(a.precio_venta, 0) AS precio_venta
       FROM solicitudes_traslado st
       LEFT JOIN articulos a ON st.id_articulo = a.id_articulo
-      LEFT JOIN sucursales so ON st.id_sucursal_origen = so.id_sucursal
-      LEFT JOIN sucursales sd ON st.id_sucursal_destino = sd.id_sucursal
-      LEFT JOIN operadores op_sol ON st.id_operador_solicita = op_sol.id_operador
-      LEFT JOIN operadores op_aut ON st.id_operador_autoriza = op_aut.id_operador
       WHERE 1=1
     `;
     const params = [];
 
     if (id_sucursal && id_sucursal !== '0' && id_sucursal !== 'TODAS') {
-      query += ` AND (st.id_sucursal_origen = ? OR st.id_sucursal_destino = ?)`;
-      params.push(id_sucursal, id_sucursal);
+      sql += ` AND (st.id_sucursal_origen = ? OR st.id_sucursal_destino = ?)`;
+      params.push(String(id_sucursal).trim(), String(id_sucursal).trim());
     }
 
     if (estatus && estatus !== 'TODOS') {
-      query += ` AND st.estatus = ?`;
-      params.push(estatus);
+      sql += ` AND st.estatus = ?`;
+      params.push(String(estatus).trim());
     }
 
-    query += ` ORDER BY st.id_solicitud DESC LIMIT 50`;
+    sql += ` ORDER BY st.id_solicitud DESC LIMIT 100`;
 
-    const [rows] = await pool.query(query, params);
-    return res.status(200).json({ success: true, data: rows });
+    const [solicitudes] = await pool.query(sql, params);
+
+    if (!solicitudes || solicitudes.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // Mapear nombres de sucursales y operadores de forma segura en memoria (sin problemas de intercalación de MySQL)
+    const [sucursales] = await pool.query('SELECT id_sucursal, nombre FROM sucursales').catch(() => [[]]);
+    const sucMap = {};
+    (sucursales || []).forEach(s => {
+      sucMap[String(s.id_sucursal).trim()] = s.nombre;
+    });
+
+    const [operadores] = await pool.query('SELECT id_operador, nombre_completo FROM operadores').catch(() => [[]]);
+    const opMap = {};
+    (operadores || []).forEach(op => {
+      opMap[op.id_operador] = op.nombre_completo;
+    });
+
+    const dataFinal = solicitudes.map(s => {
+      const origId = String(s.id_sucursal_origen || '').trim();
+      const destId = String(s.id_sucursal_destino || '').trim();
+      return {
+        ...s,
+        precio_venta: Number(s.precio_venta) || 0,
+        sucursal_origen: sucMap[origId] || origId || 'Sucursal Origen',
+        sucursal_destino: sucMap[destId] || destId || 'Sucursal Destino',
+        operador_solicita: opMap[s.id_operador_solicita] || 'Operador',
+        operador_autoriza: opMap[s.id_operador_autoriza] || (s.id_operador_autoriza ? 'Operador' : '')
+      };
+    });
+
+    return res.status(200).json({ success: true, data: dataFinal });
   } catch (error) {
-    console.warn('Aviso en obtenerSolicitudesTraslado:', error.message);
-    try {
-      await asegurarTablaSolicitudes();
-    } catch (_) {}
-    return res.status(200).json({ success: true, data: [] });
+    console.error('Error al obtener solicitudes de traslado:', error);
+    return res.status(500).json({ success: false, message: 'Error interno al consultar traslados.', detalle: error.message });
   }
 };
 
@@ -717,6 +741,7 @@ const obtenerFichaSalida = async (req, res) => {
   const { id } = req.params;
 
   try {
+    await asegurarTablaSolicitudes();
     const [rows] = await pool.query(
       `SELECT 
         st.id_solicitud,
@@ -726,30 +751,20 @@ const obtenerFichaSalida = async (req, res) => {
         st.motivo,
         st.fecha_solicitud,
         st.fecha_autorizacion,
+        st.id_sucursal_origen,
+        st.id_sucursal_destino,
+        st.id_operador_solicita,
+        st.id_operador_autoriza,
         COALESCE(a.id_articulo, 0) AS id_articulo,
         COALESCE(a.codigo, '') AS codigo,
         COALESCE(a.nombre, '') AS nombre,
         COALESCE(a.precio_venta, 0) AS precio_venta,
         COALESCE(det.marca, '') AS marca,
         COALESCE(det.color, '') AS color,
-        COALESCE(det.material, '') AS material,
-        st.id_sucursal_origen AS sucursal_origen_id,
-        COALESCE(so.nombre, st.id_sucursal_origen) AS sucursal_origen_nombre,
-        COALESCE(so.direccion, '') AS sucursal_origen_direccion,
-        COALESCE(so.telefono, '') AS sucursal_origen_telefono,
-        st.id_sucursal_destino AS sucursal_destino_id,
-        COALESCE(sd.nombre, st.id_sucursal_destino) AS sucursal_destino_nombre,
-        COALESCE(sd.direccion, '') AS sucursal_destino_direccion,
-        COALESCE(sd.telefono, '') AS sucursal_destino_telefono,
-        COALESCE(op_sol.nombre_completo, 'Operador') AS operador_solicita,
-        COALESCE(op_aut.nombre_completo, '') AS operador_autoriza
+        COALESCE(det.material, '') AS material
        FROM solicitudes_traslado st
        LEFT JOIN articulos a ON st.id_articulo = a.id_articulo
        LEFT JOIN articulo_detalle det ON a.id_articulo = det.id_articulo
-       LEFT JOIN sucursales so ON st.id_sucursal_origen = so.id_sucursal
-       LEFT JOIN sucursales sd ON st.id_sucursal_destino = sd.id_sucursal
-       LEFT JOIN operadores op_sol ON st.id_operador_solicita = op_sol.id_operador
-       LEFT JOIN operadores op_aut ON st.id_operador_autoriza = op_aut.id_operador
        WHERE st.id_solicitud = ? OR st.folio = ?`,
       [id, id]
     );
@@ -758,7 +773,38 @@ const obtenerFichaSalida = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Ficha de salida no encontrada.' });
     }
 
-    res.status(200).json({ success: true, data: rows[0] });
+    const sol = rows[0];
+
+    const [sucursales] = await pool.query('SELECT id_sucursal, nombre, direccion, telefono FROM sucursales').catch(() => [[]]);
+    const sucMap = {};
+    (sucursales || []).forEach(s => {
+      sucMap[String(s.id_sucursal).trim()] = s;
+    });
+
+    const [operadores] = await pool.query('SELECT id_operador, nombre_completo FROM operadores').catch(() => [[]]);
+    const opMap = {};
+    (operadores || []).forEach(op => {
+      opMap[op.id_operador] = op.nombre_completo;
+    });
+
+    const orig = sucMap[String(sol.id_sucursal_origen).trim()] || {};
+    const dest = sucMap[String(sol.id_sucursal_destino).trim()] || {};
+
+    const fichaFinal = {
+      ...sol,
+      sucursal_origen_id: sol.id_sucursal_origen,
+      sucursal_origen_nombre: orig.nombre || sol.id_sucursal_origen,
+      sucursal_origen_direccion: orig.direccion || '',
+      sucursal_origen_telefono: orig.telefono || '',
+      sucursal_destino_id: sol.id_sucursal_destino,
+      sucursal_destino_nombre: dest.nombre || sol.id_sucursal_destino,
+      sucursal_destino_direccion: dest.direccion || '',
+      sucursal_destino_telefono: dest.telefono || '',
+      operador_solicita: opMap[sol.id_operador_solicita] || 'Operador',
+      operador_autoriza: opMap[sol.id_operador_autoriza] || (sol.id_operador_autoriza ? 'Operador' : '')
+    };
+
+    res.status(200).json({ success: true, data: fichaFinal });
   } catch (error) {
     console.error('Error al obtener ficha de salida:', error);
     res.status(500).json({ success: false, message: 'Error al consultar la ficha de salida.', detalle: error.message });
