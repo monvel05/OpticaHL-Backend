@@ -30,7 +30,7 @@ async function migrate() {
         CONSTRAINT fk_traslado_art FOREIGN KEY (id_articulo) REFERENCES articulos(id_articulo),
         INDEX idx_traslado_orig (id_sucursal_origen),
         INDEX idx_traslado_dest (id_sucursal_destino)
-      ) ENGINE=InnoDB;
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `;
     await pool.query(createTableSQL);
     console.log('✅ Tabla solicitudes_traslado verificada/creada');
@@ -68,20 +68,23 @@ async function migrate() {
       }
     }
 
-    
-    // 6. Crear tabla marcas si no existe y poblar iniciales
+    // 6. Crear tabla marcas si no existe y poblar iniciales con utf8mb4_unicode_ci
     await pool.query(`
       CREATE TABLE IF NOT EXISTS marcas (
         id_marca INT AUTO_INCREMENT PRIMARY KEY,
-        nombre VARCHAR(100) NOT NULL,
+        nombre VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
         id_proveedor INT NULL,
-        descripcion VARCHAR(255) NULL,
+        descripcion VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
         activo TINYINT(1) DEFAULT 1,
         fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uq_marca_nombre (nombre),
         INDEX idx_marca_prov (id_proveedor)
-      ) ENGINE=InnoDB;
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    await pool.query(`
+      ALTER TABLE marcas CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    `).catch(() => {});
 
     await pool.query(`
       INSERT IGNORE INTO marcas (nombre, id_proveedor, descripcion, activo) VALUES
@@ -95,7 +98,7 @@ async function migrate() {
 
     await pool.query(`
       INSERT IGNORE INTO marcas (nombre, id_proveedor, activo)
-      SELECT DISTINCT TRIM(marca), 1, 1 
+      SELECT DISTINCT TRIM(marca) COLLATE utf8mb4_unicode_ci, 1, 1 
       FROM articulo_detalle 
       WHERE marca IS NOT NULL AND TRIM(marca) != '' AND TRIM(marca) != 'Sin Marca' AND TRIM(marca) != 'Sin marca'
     `).catch(() => {});

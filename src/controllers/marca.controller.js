@@ -1,30 +1,28 @@
 const pool = require('../config/db');
 
 /**
- * Asegura que la tabla marcas exista y tenga marcas iniciales
+ * Asegura que la tabla marcas exista con la codificación utf8mb4_unicode_ci
+ * y tenga marcas iniciales migradas
  */
 const asegurarTablaMarcas = async () => {
   const ddl = `
     CREATE TABLE IF NOT EXISTS marcas (
       id_marca INT AUTO_INCREMENT PRIMARY KEY,
-      nombre VARCHAR(100) NOT NULL,
+      nombre VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
       id_proveedor INT NULL,
-      descripcion VARCHAR(255) NULL,
+      descripcion VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
       activo TINYINT(1) DEFAULT 1,
       fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uq_marca_nombre (nombre),
       INDEX idx_marca_prov (id_proveedor)
-    ) ENGINE=InnoDB;
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `;
   await pool.query(ddl).catch(err => console.warn('Aviso crear tabla marcas:', err.message));
 
-  // Migrar marcas existentes de articulo_detalle si las hay
+  // Convertir tabla marcas a utf8mb4_unicode_ci para evitar error 1267 (Illegal mix of collations)
   await pool.query(`
-    INSERT IGNORE INTO marcas (nombre, id_proveedor, activo)
-    SELECT DISTINCT TRIM(marca), 1, 1 
-    FROM articulo_detalle 
-    WHERE marca IS NOT NULL AND TRIM(marca) != '' AND TRIM(marca) != 'Sin Marca' AND TRIM(marca) != 'Sin marca'
-  `).catch(() => {});
+    ALTER TABLE marcas CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  `).catch(err => console.warn('Aviso convertir collation marcas:', err.message));
 
   // Marcas por defecto mínimas
   await pool.query(`
@@ -35,6 +33,14 @@ const asegurarTablaMarcas = async () => {
     ('Prada', 1, 'Armazones premium', 1),
     ('Carrera', 1, 'Armazones clásicos', 1),
     ('Genérica / Económica', 1, 'Armazones accesibles', 1)
+  `).catch(() => {});
+
+  // Migrar marcas existentes de articulo_detalle si las hay (forzando collation seguro)
+  await pool.query(`
+    INSERT IGNORE INTO marcas (nombre, id_proveedor, activo)
+    SELECT DISTINCT TRIM(marca) COLLATE utf8mb4_unicode_ci, 1, 1 
+    FROM articulo_detalle 
+    WHERE marca IS NOT NULL AND TRIM(marca) != '' AND TRIM(marca) != 'Sin Marca' AND TRIM(marca) != 'Sin marca'
   `).catch(() => {});
 };
 
@@ -56,7 +62,7 @@ const obtenerMarcas = async (req, res) => {
         m.descripcion,
         m.activo,
         m.fecha_creacion,
-        (SELECT COUNT(*) FROM articulo_detalle ad WHERE ad.marca = m.nombre) AS total_articulos
+        (SELECT COUNT(*) FROM articulo_detalle ad WHERE ad.marca COLLATE utf8mb4_unicode_ci = m.nombre COLLATE utf8mb4_unicode_ci) AS total_articulos
       FROM marcas m
       LEFT JOIN proveedores p ON m.id_proveedor = p.id_proveedor
       WHERE 1=1
