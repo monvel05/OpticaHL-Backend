@@ -68,6 +68,39 @@ async function migrate() {
       }
     }
 
+    
+    // 6. Crear tabla marcas si no existe y poblar iniciales
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS marcas (
+        id_marca INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        id_proveedor INT NULL,
+        descripcion VARCHAR(255) NULL,
+        activo TINYINT(1) DEFAULT 1,
+        fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_marca_nombre (nombre),
+        INDEX idx_marca_prov (id_proveedor)
+      ) ENGINE=InnoDB;
+    `);
+
+    await pool.query(`
+      INSERT IGNORE INTO marcas (nombre, id_proveedor, descripcion, activo) VALUES
+      ('Ray-Ban', 1, 'Armazones oftálmicos y sol', 1),
+      ('Oakley', 1, 'Armazones deportivos y sol', 1),
+      ('Vogue', 1, 'Armazones de moda', 1),
+      ('Prada', 1, 'Armazones premium', 1),
+      ('Carrera', 1, 'Armazones clásicos', 1),
+      ('Genérica / Económica', 1, 'Armazones accesibles', 1)
+    `).catch(() => {});
+
+    await pool.query(`
+      INSERT IGNORE INTO marcas (nombre, id_proveedor, activo)
+      SELECT DISTINCT TRIM(marca), 1, 1 
+      FROM articulo_detalle 
+      WHERE marca IS NOT NULL AND TRIM(marca) != '' AND TRIM(marca) != 'Sin Marca' AND TRIM(marca) != 'Sin marca'
+    `).catch(() => {});
+    console.log('✅ Tabla marcas verificada/creada y poblada');
+
     console.log('🎉 Migración completada.');
     process.exit(0);
   } catch (error) {

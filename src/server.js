@@ -10,6 +10,7 @@ require('./services/recordatorio.service'); // Importamos el servicio de recorda
 // IMPORTACIÓN DE RUTAS 
 const authRoutes = require('./routes/auth.routes');
 const proveedorRoutes = require('./routes/proveedor.routes');
+const marcaRoutes = require('./routes/marca.routes');
 const articuloRoutes = require('./routes/articulo.routes');
 const inventarioRoutes = require('./routes/inventario.routes');
 const clienteRoutes = require('./routes/cliente.routes');
@@ -107,6 +108,7 @@ app.get('/api/health', (req, res) => {
 // ==========================================
 app.use('/api/auth', authRoutes);
 app.use('/api/proveedores', proveedorRoutes);
+app.use('/api/marcas', marcaRoutes);
 app.use('/api/articulos', articuloRoutes);
 app.use('/api/inventario', inventarioRoutes);
 app.use('/api/clientes', clienteRoutes);
@@ -214,6 +216,8 @@ const runSchemaAutoMigration = async () => {
           ON DUPLICATE KEY UPDATE activo = 1
         `).catch(() => {});
 
+        const { asegurarTablaMarcas } = require('./controllers/marca.controller');
+        await asegurarTablaMarcas().catch(() => {});
         console.log('✅ Verificación automática de tablas y columnas completada.');
     } catch (e) {
         console.warn('Aviso en runSchemaAutoMigration:', e.message);
