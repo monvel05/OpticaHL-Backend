@@ -80,7 +80,7 @@ const obtenerOrdenes = async (req, res) => {
                c.nombre_completo AS paciente_nombre, c.telefono, c.celular, c.email 
         FROM orden o 
         LEFT JOIN clientes c ON o.id_cliente = c.id_cliente
-        WHERE o.folio_orden = ?`;
+        WHERE o.folio_orden = ? AND o.folio_orden NOT LIKE 'RX-%'`;
 
       const [ordenRows] = await pool.query(queryOrden, [id]);
 
@@ -105,19 +105,19 @@ const obtenerOrdenes = async (req, res) => {
 
   let query = `SELECT o.folio_orden AS folio, o.fecha_emision, o.total, o.estatus, 
                       c.nombre_completo AS paciente_nombre, c.telefono, c.celular, c.email 
-               FROM orden o LEFT JOIN clientes c ON o.id_cliente = c.id_cliente`;
+               FROM orden o LEFT JOIN clientes c ON o.id_cliente = c.id_cliente WHERE o.folio_orden NOT LIKE 'RX-%'`;
 
   const params = [];
   if (fecha_inicio && fecha_fin) {
-    query += ` WHERE DATE(o.fecha_emision) BETWEEN ? AND ?`;
+    query += ` AND DATE(o.fecha_emision) BETWEEN ? AND ?`;
     params.push(fecha_inicio, fecha_fin);
   }
   if (estatus) {
-    query += params.length ? ` AND o.estatus = ?` : ` WHERE o.estatus = ?`;
+    query += ` AND o.estatus = ?`;
     params.push(estatus);
   }
   if (id_cliente) {
-    query += params.length ? ` AND o.id_cliente = ?` : ` WHERE o.id_cliente = ?`;
+    query += ` AND o.id_cliente = ?`;
     params.push(id_cliente);
   }
 

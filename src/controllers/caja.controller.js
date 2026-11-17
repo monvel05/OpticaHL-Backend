@@ -78,7 +78,7 @@ const obtenerOrdenParaCobro = async (req, res) => {
       `SELECT o.folio_orden AS folio, o.total, o.estatus, COALESCE(c.nombre_completo, 'Cliente General') AS paciente 
        FROM orden o 
        LEFT JOIN clientes c ON o.id_cliente = c.id_cliente 
-       WHERE TRIM(o.folio_orden) = ?`,
+       WHERE TRIM(o.folio_orden) = ? AND o.folio_orden NOT LIKE 'RX-%'`,
       [busquedaLimpia]
     );
 
@@ -379,7 +379,7 @@ const descargarTicketPDF = async (req, res) => {
       `SELECT o.folio_orden, o.total, o.estatus, COALESCE(c.nombre_completo, 'Cliente General') AS nombre_completo, c.telefono 
        FROM orden o 
        LEFT JOIN clientes c ON o.id_cliente = c.id_cliente 
-       WHERE TRIM(o.folio_orden) = ?`,
+       WHERE TRIM(o.folio_orden) = ? AND o.folio_orden NOT LIKE 'RX-%'`,
       [busquedaLimpia]
     );
 

@@ -28,7 +28,7 @@ const obtenerOrdenesParaFacturar = async (req, res) => {
              c.email, c.cp, c.domicilio
       FROM orden o 
       LEFT JOIN clientes c ON o.id_cliente = c.id_cliente
-      WHERE 1=1
+      WHERE o.folio_orden NOT LIKE 'RX-%'
     `;
     const params = [];
 

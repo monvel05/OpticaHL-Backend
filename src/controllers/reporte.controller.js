@@ -113,8 +113,8 @@ const obtenerAntiguedadSaldos = async (req, res) => {
              DATEDIFF(NOW(), o.fecha_emision) AS dias_antiguedad
       FROM orden o
       JOIN clientes c ON o.id_cliente = c.id_cliente
-      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento IN ('ENTRADA', 'INGRESO')
-      WHERE o.estatus IN ('Con Anticipo', 'Pendiente')
+      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento IN ('ENTRADA', 'INGRESO') WHERE o.folio_orden NOT LIKE 'RX-%'
+      AND o.estatus IN ('Con Anticipo', 'Pendiente')
         AND o.fecha_emision <= DATE_SUB(NOW(), INTERVAL 30 DAY)
       GROUP BY o.folio_orden, o.fecha_emision, o.total, c.nombre_completo, c.telefono
       HAVING saldo_pendiente > 0
@@ -272,11 +272,11 @@ const obtenerReporteVentasCompleto = async (req, res) => {
              IFNULL(SUM(m.monto), 0) AS total_pagado
       FROM orden o
       JOIN clientes c ON o.id_cliente = c.id_cliente
-      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento IN ('ENTRADA', 'INGRESO')
+      LEFT JOIN movimientos_caja m ON o.folio_orden = m.folio_orden AND m.tipo_movimiento IN ('ENTRADA', 'INGRESO') WHERE o.folio_orden NOT LIKE 'RX-%'
     `;
     const params = [];
     if (fechaInicio && fechaFin) {
-      query += ` WHERE DATE(o.fecha_emision) BETWEEN ? AND ? `;
+      query += ` AND DATE(o.fecha_emision) BETWEEN ? AND ? `;
       params.push(fechaInicio, fechaFin);
     }
     query += ` GROUP BY o.folio_orden, o.fecha_emision, c.nombre_completo, o.total, o.estatus ORDER BY o.fecha_emision DESC `;
@@ -569,7 +569,7 @@ const obtenerDashboardProductividadPersonal = async (req, res) => {
         IFNULL(AVG(o.total), 0) AS ticketPromedio,
         0 AS refraccionesCompletadas
       FROM operadores op
-      LEFT JOIN orden o ON op.id_operador = o.id_operador AND o.estatus != 'CANCELADA' ${dateFilter.condition}
+      LEFT JOIN orden o ON op.id_operador = o.id_operador AND o.estatus != 'CANCELADA' AND o.folio_orden NOT LIKE 'RX-%' ${dateFilter.condition}
       LEFT JOIN sucursales s ON o.id_sucursal = s.id_sucursal
       WHERE op.activo = 1
     `;
